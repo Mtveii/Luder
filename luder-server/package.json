@@ -1,0 +1,12 @@
+{
+  "name": "ludr-server",
+  "version": "0.3.0",
+  "description": "Ludr: лендинг, AI-прокси с подписками, регистрация",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  }
+}

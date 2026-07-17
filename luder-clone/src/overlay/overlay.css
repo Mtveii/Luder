@@ -1,0 +1,44 @@
+html, body { margin: 0; padding: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.15); cursor: crosshair; overflow: hidden; }
+
+#bg-canvas {
+  position: fixed;
+  left: 0; top: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+#bg-canvas.ready { opacity: 1; }
+
+#selection {
+  position: fixed;
+  display: none;
+  border: 1px solid color-mix(in srgb, var(--accent, #8fd400) 50%, transparent);
+  background: var(--selection, rgba(255,255,255,0.03));
+  pointer-events: none;
+  will-change: transform;
+  border-radius: 8px;
+  z-index: 1;
+}
+
+#ask-bar {
+  position: fixed;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg, #111);
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: 10px;
+  padding: 6px;
+  cursor: default;
+  will-change: transform;
+  z-index: 2;
+}
+#ask-bar.visible { display: flex; }
+#ask-bar input { flex: 1; min-width: 260px; background: transparent; border: none; color: var(--text, #eee); outline: none; padding: 6px; }
+#ask-bar button { border: none; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+#ask-btn { background: var(--primary, #8fd400); color: var(--bg, #111); font-weight: 600; }
+#ask-btn:hover { opacity: 0.9; }
+#mic-btn { background: var(--surface, #1e1e1e); color: var(--text, #eee); }
+#mic-btn:hover { background: var(--hover, rgba(255,255,255,0.08)); }
+#mic-btn.active { background: var(--primary, #8fd400); color: var(--bg, #111); }

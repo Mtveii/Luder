@@ -1,0 +1,11 @@
+body { margin: 0; padding: 16px; font-family: sans-serif; background: var(--bg, #0d0d0d); color: var(--text, #eee); }
+#search { width: 100%; box-sizing: border-box; padding: 8px; margin-bottom: 12px; background: var(--surface, #1a1a1a); border: 1px solid var(--border, rgba(255,255,255,0.08)); border-radius: 8px; color: var(--text, #eee); outline: none; }
+#search:focus { border-color: var(--primary, #8fd400); }
+.row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border, rgba(255,255,255,0.08)); }
+.row-main { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.fav { cursor: pointer; color: var(--accent, #8fd400); }
+.title { flex: 1; }
+.title:hover { color: var(--accent, #8fd400); }
+.date { color: var(--gray, #666); font-size: 12px; }
+.row button { background: none; border: none; color: var(--gray, #666); cursor: pointer; padding: 4px 8px; }
+.row button:hover { color: var(--accent, #8fd400); }

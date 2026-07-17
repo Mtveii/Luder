@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ludr — AI Screen Assistant</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0f; color: #fff; }
+    .bg-glow { position: fixed; width: 600px; height: 600px; border-radius: 50%; filter: blur(150px); opacity: 0.12; pointer-events: none; z-index: 0; }
+    .bg-glow.blue { background: #00b4ff; top: -200px; left: -100px; }
+    .bg-glow.purple { background: #8b5cf6; bottom: -200px; right: -100px; }
+    nav { position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 16px 40px; background: rgba(10,10,15,0.8); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .nav-logo { font-size: 20px; font-weight: 800; background: linear-gradient(135deg, #00b4ff, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .nav-links { display: flex; gap: 24px; align-items: center; }
+    .nav-links a { color: #666; text-decoration: none; font-size: 13px; transition: color 0.2s; }
+    .nav-links a:hover { color: #00b4ff; }
+    .nav-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #444; }
+    .nav-status .dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
+    .hero { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 120px 20px 60px; text-align: center; }
+    .logo { font-size: 72px; font-weight: 800; letter-spacing: -3px; margin-bottom: 12px; background: linear-gradient(135deg, #00b4ff, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .tagline { font-size: 20px; color: #666; margin-bottom: 48px; max-width: 460px; line-height: 1.6; }
+    .features { display: flex; gap: 24px; margin-bottom: 48px; flex-wrap: wrap; justify-content: center; }
+    .feature { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 24px 28px; width: 180px; text-align: left; transition: border-color 0.3s, background 0.3s; }
+    .feature:hover { border-color: rgba(0,180,255,0.3); background: rgba(0,180,255,0.03); }
+    .feature-icon { font-size: 24px; margin-bottom: 12px; }
+    .feature-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .feature-desc { font-size: 12px; color: #555; line-height: 1.5; }
+    .download-section { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 16px; margin-bottom: 80px; }
+    .download-btn { display: inline-flex; align-items: center; gap: 12px; padding: 20px 56px; font-size: 18px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #00b4ff, #0088cc); border: none; border-radius: 14px; cursor: pointer; text-decoration: none; transition: all 0.3s ease; box-shadow: 0 0 40px rgba(0,180,255,0.25); }
+    .download-btn:hover { transform: translateY(-3px); box-shadow: 0 0 60px rgba(0,180,255,0.45); }
+    .download-btn svg { width: 22px; height: 22px; }
+    .download-sub { display: flex; align-items: center; gap: 16px; font-size: 13px; color: #444; }
+    .download-sub span { display: flex; align-items: center; gap: 4px; }
+    .api-section { position: relative; z-index: 1; max-width: 700px; margin: 0 auto; padding: 0 20px 80px; }
+    .api-title { font-size: 28px; font-weight: 700; text-align: center; margin-bottom: 8px; }
+    .api-subtitle { text-align: center; color: #555; font-size: 14px; margin-bottom: 40px; }
+    .api-endpoints { display: flex; flex-direction: column; gap: 16px; }
+    .endpoint { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 20px 24px; display: flex; align-items: center; gap: 16px; transition: border-color 0.3s; }
+    .endpoint:hover { border-color: rgba(0,180,255,0.3); }
+    .method { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; min-width: 50px; text-align: center; }
+    .method.get { background: #22c55e22; color: #22c55e; }
+    .method.post { background: #f59e0b22; color: #f59e0b; }
+    .endpoint-info { flex: 1; }
+    .endpoint-path { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .endpoint-desc { font-size: 12px; color: #555; }
+    .endpoint-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #444; }
+    .endpoint-status .dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
+    footer { position: relative; z-index: 1; text-align: center; padding: 24px; color: #333; font-size: 12px; border-top: 1px solid rgba(255,255,255,0.03); }
+  </style>
+</head>
+<body>
+  <div class="bg-glow blue"></div>
+  <div class="bg-glow purple"></div>
+
+  <nav>
+    <div class="nav-logo">Ludr</div>
+    <div class="nav-links">
+      <a href="#features">Возможности</a>
+      <a href="#api">API</a>
+      <a href="ludr-clone.exe">Скачать</a>
+    </div>
+    <div class="nav-status"><span class="dot"></span> Сервер онлайн</div>
+  </nav>
+
+  <section class="hero" id="features">
+    <div class="logo">Ludr</div>
+    <p class="tagline">AI-ассистент для экрана. Нажми Alt+Space, выдели область — получи ответ.</p>
+
+    <div class="download-section">
+      <a href="ludr-clone.exe" class="download-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Скачать для Windows
+      </a>
+      <div class="download-sub">
+        <span id="appVersion">v0.1.0</span>
+        <span>&bull;</span>
+        <span>Windows 10/11</span>
+        <span>&bull;</span>
+        <span>5 MB</span>
+      </div>
+    </div>
+
+    <div class="features">
+      <div class="feature"><div class="feature-icon">⚡</div><div class="feature-title">Alt+Space</div><div class="feature-desc">Горячая клавиша из любого приложения</div></div>
+      <div class="feature"><div class="feature-icon">🎯</div><div class="feature-title">Выдели</div><div class="feature-desc">Рамка мышкой вокруг нужной области</div></div>
+      <div class="feature"><div class="feature-icon">🤖</div><div class="feature-title">AI</div><div class="feature-desc">7 провайдеров: Gemini, OpenAI, Anthropic, Groq, Mistral, OpenRouter, Luder</div></div>
+    </div>
+  </section>
+
+  <section class="api-section" id="api">
+    <h2 class="api-title">API</h2>
+    <p class="api-subtitle">Эндпоинты сервера</p>
+    <div class="api-endpoints">
+      <div class="endpoint">
+        <span class="method get">GET</span>
+        <div class="endpoint-info"><div class="endpoint-path">/health</div><div class="endpoint-desc">Проверка работоспособности сервера</div></div>
+        <div class="endpoint-status"><span class="dot"></span><span id="healthStatus">проверка...</span></div>
+      </div>
+      <div class="endpoint">
+        <span class="method get">GET</span>
+        <div class="endpoint-info"><div class="endpoint-path">/update</div><div class="endpoint-desc">Проверка последней версии приложения</div></div>
+        <div class="endpoint-status"><span class="dot"></span> доступен</div>
+      </div>
+      <div class="endpoint">
+        <span class="method post">POST</span>
+        <div class="endpoint-info"><div class="endpoint-path">/ask</div><div class="endpoint-desc">AI-запрос через Luder (Free/Pro/Max)</div></div>
+        <div class="endpoint-status"><span class="dot"></span> доступен</div>
+      </div>
+      <div class="endpoint">
+        <span class="method get">GET</span>
+        <div class="endpoint-info"><div class="endpoint-path">/limits</div><div class="endpoint-desc">Проверка лимитов по подписке</div></div>
+        <div class="endpoint-status"><span class="dot"></span> доступен</div>
+      </div>
+      <div class="endpoint">
+        <span class="method post">POST</span>
+        <div class="endpoint-info"><div class="endpoint-path">/register</div><div class="endpoint-desc">Регистрация пользователя</div></div>
+        <div class="endpoint-status"><span class="dot"></span> доступен</div>
+      </div>
+      <div class="endpoint">
+        <span class="method get">GET</span>
+        <div class="endpoint-info"><div class="endpoint-path">/users</div><div class="endpoint-desc">Список пользователей</div></div>
+        <div class="endpoint-status"><span class="dot"></span> доступен</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Ludr Clone &bull; 2026</footer>
+
+  <script>
+    fetch('/health').then(r => r.json()).then(() => {
+      document.getElementById('healthStatus').textContent = 'работает';
+    }).catch(() => {
+      document.getElementById('healthStatus').textContent = 'недоступен';
+      document.getElementById('healthStatus').style.color = '#ef4444';
+    });
+    fetch('/update').then(r => r.json()).then(d => {
+      if (d.version) document.getElementById('appVersion').textContent = 'v' + d.version;
+    }).catch(() => {});
+  </script>
+</body>
+</html>

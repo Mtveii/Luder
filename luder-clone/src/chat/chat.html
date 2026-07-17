@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><link rel="stylesheet" href="chat.css"></head>
+<body>
+  <div id="header">
+    <img id="logo" src="../../assets/icon.png" />
+    <div id="title">—</div>
+    <div id="model-badge"></div>
+    <button id="pin-btn" title="Поверх остальных окон">📌</button>
+    <button id="close-btn" title="Закрыть">✕</button>
+  </div>
+
+  <div id="messages"></div>
+
+  <div id="actions-row">
+    <button id="copy-btn" title="Копировать ответ">⧉</button>
+    <button id="favorite-btn" title="В избранное">☆</button>
+    <button id="regenerate-btn" title="Повторить">↻</button>
+  </div>
+
+  <div id="input-row">
+    <button id="camera-btn" title="Добавить ещё область">📷</button>
+    <button id="attach-btn" title="Прикрепить файл">📎</button>
+    <textarea id="prompt" placeholder="Ask a follow-up..."></textarea>
+    <button id="send-btn" title="Отправить">➤</button>
+  </div>
+
+  <script src="../shared/theme.js"></script>
+  <script src="../shared/markdown.js"></script>
+  <script src="chat.js"></script>
+</body>
+</html>

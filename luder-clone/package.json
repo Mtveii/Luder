@@ -1,0 +1,21 @@
+{
+  "name": "ludr-clone",
+  "version": "0.3.0",
+  "description": "Экранный AI-ассистент: хоткей → выделение области → ответ AI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "build": {
+    "appId": "com.ludrclone.app",
+    "productName": "LudrClone",
+    "win": { "target": "nsis", "icon": "assets/icon.png" },
+    "files": ["**/*", "!build${/*}"]
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {}
+}
