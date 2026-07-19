@@ -33,6 +33,7 @@ html, body { margin: 0; padding: 0; width: 100vw; height: 100vh; background: rgb
   cursor: default;
   will-change: transform;
   z-index: 2;
+  transform: translateX(-50%);
 }
 #ask-bar.visible { display: flex; }
 #ask-bar input { flex: 1; min-width: 260px; background: transparent; border: none; color: var(--text, #eee); outline: none; padding: 6px; }

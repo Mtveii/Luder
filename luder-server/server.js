@@ -5,9 +5,25 @@ const path = require('path');
 const Database = require('better-sqlite3');
 
 const PORT = process.env.PORT || 3000;
-const APP_VERSION = process.env.APP_VERSION || '0.1.0';
+const APP_VERSION = process.env.APP_VERSION || require('./package.json').version;
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || null;
 const INDEX = fs.readFileSync(path.join(__dirname, 'index.html'));
-const EXE = path.join(__dirname, 'dist', 'ludr-clone.exe');
+const EXE = path.join(__dirname, 'dist', 'luder.exe');
+
+// --- Rate limit ---
+const rateMap = new Map();
+function checkRateLimit(ip, limit = 5, windowMs = 60000) {
+  const now = Date.now();
+  if (rateMap.size > 10000) {
+    for (const [key, values] of rateMap) {
+      if (!values.some((t) => now - t < windowMs)) rateMap.delete(key);
+    }
+  }
+  const arr = (rateMap.get(ip) || []).filter(t => now - t < windowMs);
+  arr.push(now);
+  rateMap.set(ip, arr);
+  return arr.length <= limit;
+}
 
 // --- SQLite ---
 const db = new Database(path.join(__dirname, 'data.db'));
@@ -25,11 +41,21 @@ function json(res, code, data) {
   res.end(body);
 }
 
-function readBody(req) {
-  return new Promise((resolve) => {
+function readBody(req, maxBytes = 16 * 1024) {
+  return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', (c) => chunks.push(c));
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > maxBytes) {
+        req.destroy();
+        reject(new Error('request body too large'));
+        return;
+      }
+      chunks.push(c);
+    });
     req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString())); } catch { resolve(null); } });
+    req.on('error', reject);
   });
 }
 
@@ -41,24 +67,34 @@ const server = http.createServer(async (req, res) => {
     return res.end(INDEX);
   }
   if (req.method === 'GET' && url === '/health') return json(res, 200, { ok: true });
-  if (req.method === 'GET' && url === '/update') return json(res, 200, { version: APP_VERSION });
+  if (req.method === 'GET' && url === '/update') return json(res, 200, { version: APP_VERSION, downloadUrl: `http://100.102.160.84:${PORT}/luder.exe` });
 
-  if (req.method === 'GET' && url === '/ludr-clone.exe') {
+  if (req.method === 'GET' && url === '/luder.exe') {
     if (!fs.existsSync(EXE)) return json(res, 404, { error: 'not found' });
-    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="ludr-clone.exe"' });
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="luder.exe"' });
     return fs.createReadStream(EXE).pipe(res);
   }
 
-  if (req.method === 'GET' && url === '/users') return json(res, 200, stmtAll.all());
+  // /users — admin only
+  if (req.method === 'GET' && url === '/users') {
+    if (!ADMIN_TOKEN) return json(res, 503, { error: 'admin endpoint is disabled' });
+    if (req.headers['x-admin-token'] !== ADMIN_TOKEN) return json(res, 403, { error: 'forbidden' });
+    return json(res, 200, stmtAll.all());
+  }
 
+  // /register — rate limit + validation
   if (req.method === 'POST' && url === '/register') {
-    const body = await readBody(req);
-    if (!body?.id) return json(res, 400, { error: 'id required' });
+    const ip = req.socket.remoteAddress;
+    if (!checkRateLimit(ip)) return json(res, 429, { error: 'too many requests' });
+    let body;
+    try { body = await readBody(req); } catch (err) { return json(res, 413, { error: err.message }); }
+    if (!body?.id || typeof body.id !== 'string' || body.id.length > 100) return json(res, 400, { error: 'invalid id' });
+    const safe = (v, max = 100) => (typeof v === 'string' ? v.slice(0, max) : null);
     const now = Date.now();
     const existing = stmtGet.get(body.id);
-    if (existing) stmtUpdate.run(now, body.provider || null, body.id);
-    else stmtInsert.run(body.id, body.username || null, body.os || null, body.version || null, body.tier || 'free', body.provider || null, now, now);
-    return json(res, 200, { ok: true, tier: existing?.tier || body.tier || 'free' });
+    if (existing) stmtUpdate.run(now, safe(body.provider), body.id);
+    else stmtInsert.run(body.id, safe(body.username), safe(body.os), safe(body.version), 'free', safe(body.provider), now, now);
+    return json(res, 200, { ok: true, tier: existing?.tier || 'free' });
   }
 
   json(res, 404, { error: 'not found' });

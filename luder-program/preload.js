@@ -6,13 +6,13 @@ const CHANNELS = {
   ASK_QUESTION: 'ask-question', STREAM_CHUNK: 'stream-chunk', STREAM_END: 'stream-end', STREAM_ERROR: 'stream-error',
   GET_SETTINGS: 'get-settings', SET_SETTINGS: 'set-settings',
   CLOSE_OVERLAY: 'close-overlay', CLOSE_CHAT: 'close-chat',
-  OPEN_HOME: 'open-home', OPEN_HISTORY: 'open-history', OPEN_SETTINGS_WINDOW: 'open-settings-window',
+  OPEN_HOME: 'open-home',
   OPEN_EXTERNAL: 'open-external', GET_OS_USERNAME: 'get-os-username',
   GET_STATS: 'get-stats', GET_THREADS: 'get-threads', REOPEN_THREAD: 'reopen-thread',
   THREAD_LOADED: 'thread-loaded', TOGGLE_FAVORITE: 'toggle-favorite',
   DELETE_THREAD: 'delete-thread', CLEAR_HISTORY: 'clear-history',
   GET_QUICK_HOTKEYS: 'get-quick-hotkeys', SET_QUICK_HOTKEYS: 'set-quick-hotkeys', QUICK_HOTKEY_PROMPT: 'quick-hotkey-prompt',
-  CHECK_FOR_UPDATES: 'check-for-updates', UPDATE_AVAILABLE: 'update-available',
+  CHECK_FOR_UPDATES: 'check-for-updates', UPDATE_AVAILABLE: 'update-available', DOWNLOAD_UPDATE: 'download-update',
   TOGGLE_PIN_CHAT: 'toggle-pin-chat', CAPTURE_AND_ATTACH: 'capture-and-attach', ATTACH_FILE: 'attach-file',
   GET_THEMES: 'get-themes',   GET_THEME: 'get-theme', SET_THEME: 'set-theme',
   UPDATE_HOTKEY: 'update-hotkey',
@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   checkForUpdates: () => ipcRenderer.invoke(CHANNELS.CHECK_FOR_UPDATES),
   onUpdateAvailable: (cb) => ipcRenderer.on(CHANNELS.UPDATE_AVAILABLE, (_e, info) => cb(info)),
+  downloadUpdate: (url) => ipcRenderer.invoke(CHANNELS.DOWNLOAD_UPDATE, { url }),
 
   togglePinChat: (pinned) => ipcRenderer.send(CHANNELS.TOGGLE_PIN_CHAT, pinned),
   captureAndAttach: (threadId) => ipcRenderer.send(CHANNELS.CAPTURE_AND_ATTACH, { threadId }),

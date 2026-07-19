@@ -9,12 +9,15 @@ let presetPrompt = null;
 let displayBounds = { x: 0, y: 0, width: 0, height: 0 };
 let displayIndex = 0;
 let lastRect = null;
+let voiceSetup = false;
 
 // --- Init: draw this monitor's screenshot on canvas ---
 window.electronAPI.on('overlay-init', (info) => {
   displayBounds = info.displayBounds;
   displayIndex = info.displayIndex;
   lastRect = null;
+  if (info.voiceInput && !voiceSetup) setupVoice();
+  if (!info.voiceInput) micBtn.disabled = true;
 
   // Reset state for fresh selection
   selection.style.display = 'none';
@@ -105,7 +108,7 @@ window.electronAPI.on('selectionDone', (data) => {
     const db = displayBounds;
     const rect = data.rect;
 
-    const barX = Math.min(rect.x + rect.width, db.x + db.width) - db.x;
+    const barX = (rect.x + rect.width / 2) - db.x;
     const barY = (rect.y + rect.height) - db.y + 8;
 
     askBar.style.left = barX + 'px';
@@ -151,6 +154,7 @@ function submitAsk() { if (lastRect) window.electronAPI.captureRegion(lastRect, 
 // --- Voice ---
 let recognizing = false;
 function setupVoice() {
+  voiceSetup = true;
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) { micBtn.disabled = true; micBtn.title = 'Voice input unavailable'; return; }
   const recognition = new SpeechRecognition();
@@ -164,6 +168,5 @@ function setupVoice() {
   recognition.onend = () => { recognizing = false; micBtn.classList.remove('active'); };
   recognition.onerror = () => { recognizing = false; micBtn.classList.remove('active'); };
 }
-setupVoice();
 
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.electronAPI.closeOverlay(); });

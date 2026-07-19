@@ -152,11 +152,21 @@ select { cursor: pointer; appearance: none; background-image: url("data:image/sv
 }
 .tier-card:hover { border-color: var(--gray, #555); transform: translateY(-2px); }
 .tier-card.active { border-color: var(--accent, #8fd400); background: var(--selection, rgba(143,212,0,0.08)); }
+.tier-card.unavailable { cursor: not-allowed; opacity: 0.55; }
+.tier-card.unavailable:hover { border-color: var(--border, rgba(255,255,255,0.08)); transform: none; }
 .tier-name { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
 .tier-price { color: var(--accent, #8fd400); font-size: 13px; font-weight: 600; margin-bottom: 6px; }
 .tier-limit { font-size: 12px; color: var(--text, #eee); margin-bottom: 4px; }
 .tier-features { font-size: 11px; color: var(--gray, #888); }
 #tier-status { margin-top: 10px; }
+
+/* --- PROFILE --- */
+.profile-card { display: flex; align-items: center; gap: 14px; padding: 18px; margin-bottom: 16px; background: var(--surface, #131313); border: 1px solid var(--border, rgba(255,255,255,0.08)); border-radius: 12px; }
+#profile-avatar { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; background: var(--primary, #8fd400); color: var(--bg, #111); font-size: 22px; font-weight: 700; }
+.profile-name { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+.profile-meta { display: flex; flex-direction: column; gap: 4px; margin: 12px 0; font-size: 12px; color: var(--gray, #777); }
+.profile-meta code { max-width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--text, #eee); }
+#profile-status { margin-left: 8px; font-size: 13px; color: var(--accent, #8fd400); }
 
 /* --- ТЕМЫ --- */
 #themes-grid {

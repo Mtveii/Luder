@@ -3,8 +3,9 @@
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.Updater = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
-  const SERVER_URL = 'http://100.102.160.84:3000';
-  const GITHUB_URL = 'https://api.github.com/repos/your-org/ludr-clone/releases/latest';
+  let SERVER_URL = 'http://100.102.160.84:3000';
+  try { SERVER_URL = require('../../config').SERVER_URL; } catch (_) {}
+  const GITHUB_URL = 'https://api.github.com/repos/Mtveii/Luder/releases/latest';
 
   function parseVersion(v) {
     return String(v).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
@@ -29,14 +30,14 @@
         const latestVersion = (data.version || '').toString();
         const url = data.downloadUrl || '';
         const notes = data.notes || '';
-        return { hasUpdate: isNewer(latestVersion, currentVersion), latestVersion, url, notes, source: 'server' };
+        if (latestVersion) return { hasUpdate: isNewer(latestVersion, currentVersion), latestVersion, url, notes, source: 'server' };
       }
-    } catch (_) { /* fallback to GitHub */ }
+    } catch (_) { /* server offline */ }
 
     // Fallback: GitHub releases
     try {
       const res = await fetch(GITHUB_URL, { headers: { Accept: 'application/vnd.github+json' } });
-      if (!res.ok) throw new Error(`GitHub ошибка: ${res.status}`);
+      if (!res.ok) throw new Error(`GitHub: ${res.status}`);
       const data = await res.json();
       const latestVersion = (data.tag_name || data.version || '').toString();
       const url = data.html_url || data.url || '';

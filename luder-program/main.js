@@ -6,8 +6,24 @@ const os = require('os');
 const providers = require('./src/shared/providers');
 const storage = require('./src/shared/storage');
 const updater = require('./src/shared/updater');
+const { SERVER_URL } = require('./config');
 
-const SERVER_URL = 'http://100.102.160.84:3000';
+// --- Single instance lock ---
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // Second instance tried to start — bring existing window to front
+    if (homeWindow && !homeWindow.isDestroyed()) {
+      if (homeWindow.isMinimized()) homeWindow.restore();
+      homeWindow.focus();
+    } else if (chatWindow && !chatWindow.isDestroyed()) {
+      if (chatWindow.isMinimized()) chatWindow.restore();
+      chatWindow.focus();
+    }
+  });
+}
 
 Menu.setApplicationMenu(null);
 
@@ -24,8 +40,6 @@ const CHANNELS = {
   CLOSE_CHAT: 'close-chat',
 
   OPEN_HOME: 'open-home',
-  OPEN_HISTORY: 'open-history',
-  OPEN_SETTINGS_WINDOW: 'open-settings-window',
   OPEN_EXTERNAL: 'open-external',
   GET_OS_USERNAME: 'get-os-username',
 
@@ -43,6 +57,7 @@ const CHANNELS = {
 
   CHECK_FOR_UPDATES: 'check-for-updates',
   UPDATE_AVAILABLE: 'update-available',
+  DOWNLOAD_UPDATE: 'download-update',
 
   TOGGLE_PIN_CHAT: 'toggle-pin-chat',
   CAPTURE_AND_ATTACH: 'capture-and-attach',
@@ -79,8 +94,6 @@ async function registerUser() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         id: settings.deviceId,
-        username: os.userInfo().username,
-        os: `${os.platform()} ${os.release()}`,
         version: app.getVersion(),
         provider: settings.provider,
       }),
@@ -95,35 +108,60 @@ function windowDefaults() {
 
 // --- Hotkeys ---
 function registerMainHotkey(combo) {
+  const previous = currentMainHotkey;
   if (currentMainHotkey) {
     globalShortcut.unregister(currentMainHotkey);
     currentMainHotkey = null;
   }
-  if (!combo || combo.trim() === '') return;
+  if (!combo || combo.trim() === '') return true;
   try {
     const success = globalShortcut.register(combo, () => { if (overlayWindows.size === 0) createOverlayWindows(); });
     if (success) {
       currentMainHotkey = combo;
       console.log(`[HOTKEY] Registered: ${combo}`);
+      return true;
     } else {
       console.error(`[HOTKEY] Failed to register: ${combo} (returns false)`);
     }
   } catch (err) {
     console.error(`[HOTKEY] Failed to register ${combo}:`, err.message);
   }
+  if (previous) {
+    try {
+      if (globalShortcut.register(previous, () => { if (overlayWindows.size === 0) createOverlayWindows(); })) currentMainHotkey = previous;
+    } catch (_) {}
+  }
+  return false;
 }
 
 function registerQuickHotkeys() {
   dynamicQuickHotkeys.forEach((combo) => globalShortcut.unregister(combo));
   dynamicQuickHotkeys.length = 0;
+  const accepted = [];
+  const rejected = [];
+  const seen = new Set();
   for (const hk of storage.listQuickHotkeys()) {
+    const combo = typeof hk?.combo === 'string' ? hk.combo.trim() : '';
+    const normalized = combo.toLowerCase();
+    if (!combo || !hk?.prompt || seen.has(normalized) || normalized === String(currentMainHotkey || '').toLowerCase()) {
+      rejected.push(combo || 'invalid shortcut');
+      continue;
+    }
+    seen.add(normalized);
     try {
-      globalShortcut.register(hk.combo, () => { if (overlayWindows.size === 0) createOverlayWindows(hk.prompt); });
-      dynamicQuickHotkeys.push(hk.combo);
+      const registered = globalShortcut.register(combo, () => { if (overlayWindows.size === 0) createOverlayWindows(hk.prompt); });
+      if (!registered) {
+        rejected.push(combo);
+        continue;
+      }
+      dynamicQuickHotkeys.push(combo);
+      accepted.push({ ...hk, combo });
     } catch (err) {
-      console.error(`Failed to register quick hotkey ${hk.combo}:`, err.message);
+      rejected.push(combo);
+      console.error(`Failed to register quick hotkey ${combo}:`, err.message);
     }
   }
+  return { accepted, rejected };
 }
 
 // --- Close all overlay windows ---
@@ -162,15 +200,13 @@ async function createOverlayWindows(promptPreset = '') {
       win.webContents.send('overlay-theme', theme);
 
       // Find this display's capture
-      const cap = monitorCaptures.find((c) =>
-        c.bounds.x === b.x && c.bounds.y === b.y &&
-        c.bounds.width === b.width && c.bounds.height === b.height
-      );
+      const cap = monitorCaptures.find((c) => c.displayId === d.id);
 
       win.webContents.send('overlay-init', {
         displayBounds: b,
         displayIndex: i,
         captureDataUrl: cap ? cap.dataUrl : null,
+        voiceInput: settings.settings?.voiceInput !== false,
       });
 
       if (promptPreset) win.webContents.send(CHANNELS.QUICK_HOTKEY_PROMPT, promptPreset);
@@ -214,10 +250,10 @@ async function captureMonitors() {
   for (const d of displays) {
     const b = d.bounds;
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: b.width, height: b.height } });
-    let source = sources.find((s) => s.thumbnail.getSize().width === b.width && s.thumbnail.getSize().height === b.height);
+    let source = sources.find((s) => s.display_id === String(d.id));
     if (!source) source = sources[0];
     if (source) {
-      captures.push({ bounds: b, dataUrl: source.thumbnail.toDataURL() });
+      captures.push({ displayId: d.id, bounds: b, dataUrl: source.thumbnail.toDataURL() });
     }
   }
   return captures;
@@ -232,7 +268,7 @@ async function captureRegion(rect) {
   for (const d of displays) {
     const b = d.bounds;
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: b.width, height: b.height } });
-    let source = sources.find((s) => s.thumbnail.getSize().width === b.width && s.thumbnail.getSize().height === b.height);
+    let source = sources.find((s) => s.display_id === String(d.id));
     if (!source) source = sources[0];
     if (source) {
       monitorImages.push({ bounds: b, image: source.thumbnail });
@@ -316,13 +352,15 @@ function compositeImages(pieces, width, height) {
       compositor.webContents.send('composite', { pieces, width, height });
     });
 
-    ipcMain.once('composite-result', (_e, dataUrl) => {
+    const onResult = (_e, dataUrl) => {
+      clearTimeout(timeout);
       compositor.close();
       resolve(dataUrl.split(',')[1]);
-    });
+    };
+    ipcMain.once('composite-result', onResult);
 
-    // Fallback timeout
-    setTimeout(() => {
+    const timeout = setTimeout(() => {
+      ipcMain.removeListener('composite-result', onResult);
       if (!compositor.isDestroyed()) {
         compositor.close();
         reject(new Error('Compositor timeout'));
@@ -342,6 +380,10 @@ async function checkAndNotifyUpdate(forced) {
 
 app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === 'media'));
+
+  // Force reload settings to ensure API keys from .env are loaded
+  const settings = storage.forceReloadSettings();
+  console.log('[APP] Loaded API keys:', Object.keys(settings.apiKeys || {}));
 
   const savedHotkey = storage.getHotkey();
   registerMainHotkey(savedHotkey);
@@ -364,18 +406,8 @@ app.whenReady().then(() => {
   // Capture region from overlay selection
   ipcMain.on(CHANNELS.CAPTURE_REGION, async (_e, { rect, prompt }) => {
     try {
-      // Check daily limit
-      const limit = storage.checkDailyLimit();
-      if (!limit.allowed) {
-        closeAllOverlays();
-        const msg = `Daily limit reached (${limit.limit}/${limit.limit}). ${limit.tier === 'free' ? 'Upgrade to Pro in Settings.' : ''}`;
-        createChatWindow({ prompt: msg });
-        return;
-      }
-
       const imageBase64 = await captureRegion(rect);
       closeAllOverlays();
-      storage.incrementDailyRequests();
 
       if (attachTargetThreadId) {
         const threadId = attachTargetThreadId;
@@ -466,13 +498,16 @@ app.whenReady().then(() => {
   ipcMain.handle(CHANNELS.ATTACH_FILE, async () => {
     const result = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }] });
     if (result.canceled || !result.filePaths[0]) return null;
-    return fs.readFileSync(result.filePaths[0]).toString('base64');
+    const filePath = result.filePaths[0];
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
+    return { base64: fs.readFileSync(filePath).toString('base64'), mimeType };
   });
 
   ipcMain.on(CHANNELS.TOGGLE_PIN_CHAT, (_e, pinned) => { if (chatWindow) chatWindow.setAlwaysOnTop(pinned); });
 
   ipcMain.handle(CHANNELS.GET_ALL, async () => ({
-    settings: storage.readSettings(),
+    settings: { ...storage.readSettings(), tier: storage.getTier() },
     stats: storage.getStats(),
     threads: storage.listThreads(),
     themes: storage.getThemes(),
@@ -501,9 +536,11 @@ app.whenReady().then(() => {
 
   ipcMain.handle(CHANNELS.GET_QUICK_HOTKEYS, async () => storage.listQuickHotkeys());
   ipcMain.handle(CHANNELS.SET_QUICK_HOTKEYS, async (_e, list) => {
-    const saved = storage.setQuickHotkeys(list);
-    registerQuickHotkeys();
-    return saved;
+    if (!Array.isArray(list)) throw new Error('Hotkeys must be a list');
+    storage.setQuickHotkeys(list);
+    const result = registerQuickHotkeys();
+    storage.setQuickHotkeys(result.accepted);
+    return result;
   });
 
   ipcMain.handle(CHANNELS.GET_THEMES, async () => storage.getThemes());
@@ -511,16 +548,39 @@ app.whenReady().then(() => {
   ipcMain.handle(CHANNELS.SET_THEME, async (_e, themeId) => storage.setTheme(themeId));
 
   ipcMain.handle(CHANNELS.UPDATE_HOTKEY, async (_e, combo) => {
-    registerMainHotkey(combo);
-    storage.setHotkey(combo);
-    return { ok: true, combo, registered: currentMainHotkey === combo };
+    const registered = registerMainHotkey(combo);
+    if (registered) storage.setHotkey(combo);
+    return { ok: registered, combo: currentMainHotkey, registered };
   });
 
   ipcMain.handle(CHANNELS.GET_MODELS, async (_e, provider) => providers.getModels(provider));
 
   ipcMain.handle(CHANNELS.CHECK_FOR_UPDATES, async () => updater.checkForUpdates(app.getVersion()));
+
+  ipcMain.handle('download-update', async (_e, { url }) => {
+    if (!url) throw new Error('No download URL');
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+    const tmpPath = path.join(app.getPath('temp'), 'luder-update.exe');
+
+    // Download
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+    fs.writeFileSync(tmpPath, buffer);
+
+    // Launch installer and quit
+    execAsync(`"${tmpPath}" /S`);
+    setTimeout(() => app.quit(), 1000);
+    return { ok: true };
+  });
   ipcMain.handle(CHANNELS.GET_OS_USERNAME, async () => os.userInfo().username);
-  ipcMain.handle(CHANNELS.OPEN_EXTERNAL, async (_e, url) => shell.openExternal(url));
+  ipcMain.handle(CHANNELS.OPEN_EXTERNAL, async (_e, url) => {
+    const parsed = new URL(url);
+    if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('Unsupported URL protocol');
+    return shell.openExternal(parsed.toString());
+  });
   ipcMain.on(CHANNELS.OPEN_HOME, () => createHomeWindow());
 
   ipcMain.on(CHANNELS.ASK_QUESTION, async (event, payload) => {
@@ -528,6 +588,11 @@ app.whenReady().then(() => {
     const sender = event.sender;
     const isDestroyed = () => sender.isDestroyed();
     try {
+      const limit = storage.checkDailyLimit();
+      if (!limit.allowed) throw new Error(`Daily limit reached (${limit.count}/${limit.limit})`);
+      if (payload.persistUser && payload.threadId) {
+        storage.appendMessage(payload.threadId, 'user', payload.prompt || '', payload.userImageBase64 || null);
+      }
       const iterator = await providers.ask(payload.imageBase64, payload.prompt, {
         provider: settings.provider, model: settings.model, apiKeys: settings.apiKeys, deviceId: settings.deviceId,
         threadHistory: payload.threadHistory || [],
@@ -540,6 +605,7 @@ app.whenReady().then(() => {
       }
       if (!isDestroyed()) sender.send(CHANNELS.STREAM_END);
       if (payload.threadId) storage.appendMessage(payload.threadId, 'assistant', providers.cleanResponse(fullText));
+      storage.incrementDailyRequests();
     } catch (err) {
       console.error(`[ASK] provider=${settings.provider} error:`, err.message);
       if (!isDestroyed()) sender.send(CHANNELS.STREAM_ERROR, err.message || 'Failed to get response');

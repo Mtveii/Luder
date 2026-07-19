@@ -2,4 +2,6 @@ node_modules/
 .env
 *.log
 data.db
+data.db-shm
+data.db-wal
 dist/

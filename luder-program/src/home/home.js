@@ -51,6 +51,7 @@ document.getElementById('nav-home').addEventListener('click', () => showPage('ho
 document.getElementById('nav-history').addEventListener('click', () => showPage('history'));
 document.getElementById('nav-themes').addEventListener('click', () => showPage('themes'));
 document.getElementById('nav-hotkeys').addEventListener('click', () => showPage('hotkeys'));
+document.getElementById('nav-profile').addEventListener('click', () => showPage('profile'));
 document.getElementById('nav-settings').addEventListener('click', () => showPage('settings'));
 
 // --- Применение темы ---
@@ -74,9 +75,19 @@ function applyThemeCSS(theme) {
 
 // --- Рендер из кеша (без доп. IPC) ---
 function renderGreeting(name, settings) {
-  greetingEl.textContent = `Hi, ${name}`;
+  const displayName = settings.profile?.displayName?.trim() || name;
+  greetingEl.textContent = `Hi, ${displayName}`;
   const provName = settings.provider === 'luder' ? 'LUDR' : (settings.provider || 'gemini').toUpperCase();
-  document.getElementById('hotkey-hint').innerHTML = `Provider: <b>${provName}</b> — Press <b>Ctrl+Alt+Space</b>`;
+  const hotkey = settings.hotkey || 'Ctrl+Alt+Space';
+  document.getElementById('hotkey-hint').innerHTML = `Provider: <b>${provName}</b> — Press <b>${escapeHtml(hotkey)}</b>`;
+}
+
+function renderProfile(settings, fallbackName) {
+  const name = settings.profile?.displayName?.trim() || fallbackName;
+  document.getElementById('profile-name').value = settings.profile?.displayName || '';
+  document.getElementById('profile-name-preview').textContent = name;
+  document.getElementById('profile-avatar').textContent = (name || 'L').slice(0, 1).toUpperCase();
+  document.getElementById('profile-device-id').textContent = settings.deviceId || '—';
 }
 
 function renderStats(stats) {
@@ -106,6 +117,15 @@ function renderRecent(threads) {
     row.addEventListener('click', () => window.electronAPI.reopenThread(t.id));
     recentList.appendChild(row);
   });
+}
+
+async function refreshDashboard() {
+  const [stats, threads] = await Promise.all([window.electronAPI.getStats(), window.electronAPI.getThreads()]);
+  cached.stats = stats;
+  cached.threads = threads;
+  allThreads = threads;
+  renderStats(stats);
+  renderRecent(threads);
 }
 
 function renderSpotlight() {
@@ -152,6 +172,7 @@ function renderHistory(threads) {
       allThreads = allThreads.filter((th) => th.id !== t.id);
       cached.threads = allThreads;
       renderHistory(allThreads);
+      refreshDashboard();
     });
     historyList.appendChild(row);
   });
@@ -163,6 +184,23 @@ document.getElementById('clear-history').addEventListener('click', async () => {
   allThreads = [];
   cached.threads = [];
   renderHistory([]);
+  refreshDashboard();
+});
+
+document.getElementById('save-profile').addEventListener('click', async () => {
+  if (!cached) return;
+  const displayName = document.getElementById('profile-name').value.trim().slice(0, 40);
+  cached.settings.profile = { ...(cached.settings.profile || {}), displayName };
+  await window.electronAPI.setSettings(cached.settings);
+  renderGreeting(cached.username, cached.settings);
+  renderProfile(cached.settings, cached.username);
+  const usage = await window.electronAPI.getDailyUsage();
+  cached.settings.tier = usage.tier;
+  renderTier(usage.tier);
+  updateTierStatus();
+  const status = document.getElementById('profile-status');
+  status.textContent = usage.tier === 'max' ? 'Saved — Max access enabled' : 'Saved';
+  setTimeout(() => { status.textContent = ''; }, 2000);
 });
 
 searchEl.addEventListener('input', () => {
@@ -210,20 +248,27 @@ document.getElementById('apply-theme').addEventListener('click', async () => {
 });
 
 // --- QUICK HOTKEYS ---
+async function saveQuickHotkeys(list) {
+  const result = await window.electronAPI.setQuickHotkeys(list);
+  const saved = result?.accepted || result || [];
+  cached.hotkeys = saved;
+  renderHotkeys(saved);
+  if (result?.rejected?.length) alert(`Could not register: ${result.rejected.join(', ')}`);
+  return saved;
+}
+
 function renderHotkeys(list) {
   hotkeysList.innerHTML = '';
   list.forEach((hk, i) => {
     const row = document.createElement('div');
     row.className = 'hk-row';
     row.style.animation = `fadeSlideIn 0.25s ease ${i * 0.04}s both`;
-    row.innerHTML = `<b>${hk.combo}</b> → ${hk.prompt} <button data-i="${i}">✕</button>`;
+    row.innerHTML = `<b>${escapeHtml(hk.combo)}</b> → ${escapeHtml(hk.prompt)} <button data-i="${i}">✕</button>`;
     row.querySelector('button').addEventListener('click', async () => {
       row.style.animation = 'fadeOut 0.2s ease forwards';
       await new Promise((r) => setTimeout(r, 200));
       const updated = list.filter((_, idx) => idx !== i);
-      await window.electronAPI.setQuickHotkeys(updated);
-      cached.hotkeys = updated;
-      renderHotkeys(updated);
+      await saveQuickHotkeys(updated);
     });
     hotkeysList.appendChild(row);
   });
@@ -234,11 +279,14 @@ document.getElementById('hk-add').addEventListener('click', async () => {
   const prompt = document.getElementById('hk-prompt').value.trim();
   if (!combo || !prompt || !cached) return;
   if (cached.hotkeys.length >= 10) { alert('Максимум 10 quick hotkeys'); return; }
-  cached.hotkeys.push({ id: Date.now().toString(), combo, prompt, label: prompt.slice(0, 20) });
-  await window.electronAPI.setQuickHotkeys(cached.hotkeys);
+  if (cached.hotkeys.some((hk) => hk.combo.toLowerCase() === combo.toLowerCase())) {
+    alert('This shortcut already exists');
+    return;
+  }
+  const candidate = [...cached.hotkeys, { id: Date.now().toString(), combo, prompt, label: prompt.slice(0, 20) }];
+  await saveQuickHotkeys(candidate);
   document.getElementById('hk-combo').value = '';
   document.getElementById('hk-prompt').value = '';
-  renderHotkeys(cached.hotkeys);
 });
 
 // --- НАСТРОЙКИ ---
@@ -272,6 +320,10 @@ providerEl.addEventListener('change', async () => {
 
 function updateKeyHint(provider) {
   const hintEl = document.getElementById('key-hint');
+  if (provider === 'luder') {
+    hintEl.textContent = 'Luder routes your own provider keys. Add at least one API key below.';
+    return;
+  }
   if (hintEl && keyHints[provider]) {
     hintEl.textContent = keyHints[provider];
   } else if (hintEl) {
@@ -292,9 +344,13 @@ function renderTier(tier) {
 document.querySelectorAll('.tier-card').forEach((card) => {
   card.addEventListener('click', async () => {
     const tier = card.dataset.tier;
+    if (tier !== 'free') {
+      alert('Subscriptions are not available yet. The app remains on the Free plan.');
+      return;
+    }
     currentTier = tier;
     renderTier(tier);
-    if (cached) cached.tier = tier;
+    if (cached) cached.settings.tier = tier;
     await window.electronAPI.setTier(tier);
     updateTierStatus();
   });
@@ -335,10 +391,15 @@ document.getElementById('save').addEventListener('click', async () => {
     hotkey: hotkeyEl.value || 'Ctrl+Alt+Space',
     settings: { ...cached.settings.settings, alwaysOnTopChat: alwaysOnTopEl.checked, voiceInput: voiceInputEl.checked },
   };
+  const result = await window.electronAPI.updateHotkey(hotkeyEl.value || 'Ctrl+Alt+Space');
+  if (!result?.registered) {
+    newSettings.hotkey = result?.combo || cached.settings.hotkey || 'Ctrl+Alt+Space';
+    hotkeyEl.value = newSettings.hotkey;
+  }
   await window.electronAPI.setSettings(newSettings);
   cached.settings = newSettings;
-  const result = await window.electronAPI.updateHotkey(hotkeyEl.value || 'Ctrl+Alt+Space');
-  statusEl.textContent = result?.registered ? 'Сохранено' : 'Сохранено (хоткей может не работать)';
+  renderGreeting(cached.username, cached.settings);
+  statusEl.textContent = result?.registered ? 'Сохранено' : 'Не удалось зарегистрировать хоткей; сохранён предыдущий.';
   statusEl.style.animation = 'fadeSlideIn 0.3s ease';
   setTimeout(() => { statusEl.textContent = ''; }, 3000);
 });
@@ -347,7 +408,19 @@ document.getElementById('check-update').addEventListener('click', async () => {
   statusEl.textContent = 'Проверка...';
   try {
     const result = await window.electronAPI.checkForUpdates();
-    statusEl.textContent = result.hasUpdate ? `Доступна версия ${result.latestVersion}` : 'У вас последняя версия';
+    if (result.error) statusEl.textContent = `Не удалось проверить обновления: ${result.error}`;
+    else if (result.hasUpdate) {
+      statusEl.textContent = `Доступна версия ${result.latestVersion}. `;
+      const dlBtn = document.createElement('button');
+      dlBtn.textContent = 'Обновить сейчас';
+      dlBtn.style.cssText = 'padding:4px 12px;border-radius:6px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-weight:600;margin-left:4px;';
+      dlBtn.addEventListener('click', async () => {
+        dlBtn.textContent = 'Загрузка...';
+        dlBtn.disabled = true;
+        try { await window.electronAPI.downloadUpdate(result.url); } catch (err) { dlBtn.textContent = 'Ошибка'; }
+      });
+      statusEl.appendChild(dlBtn);
+    } else statusEl.textContent = 'У вас последняя версия';
   } catch (err) {
     statusEl.textContent = `Ошибка: ${err.message}`;
   }
@@ -357,11 +430,23 @@ document.getElementById('check-update').addEventListener('click', async () => {
 window.electronAPI.onUpdateAvailable((info) => {
   updateBanner.classList.remove('hidden');
   updateBanner.style.animation = 'fadeSlideIn 0.4s ease';
-  updateBanner.innerHTML = `Доступна новая версия ${info.latestVersion}. <a href="#" id="update-link">Скачать</a>`;
-  document.getElementById('update-link').addEventListener('click', (e) => {
-    e.preventDefault();
-    window.electronAPI.openExternal(info.url);
-  });
+  updateBanner.textContent = `Доступна новая версия ${info.latestVersion}.`;
+  if (info.url) {
+    const btn = document.createElement('button');
+    btn.textContent = 'Обновить';
+    btn.style.cssText = 'margin-left:12px;padding:4px 16px;border-radius:8px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-weight:600;';
+    btn.addEventListener('click', async () => {
+      btn.textContent = 'Загрузка...';
+      btn.disabled = true;
+      try {
+        await window.electronAPI.downloadUpdate(info.url);
+      } catch (err) {
+        btn.textContent = 'Ошибка';
+        setTimeout(() => { btn.textContent = 'Обновить'; btn.disabled = false; }, 2000);
+      }
+    });
+    updateBanner.appendChild(btn);
+  }
 });
 
 // --- INIT: один IPC call ---
@@ -370,6 +455,7 @@ window.electronAPI.onUpdateAvailable((info) => {
   allThreads = cached.threads;
   keyHints = cached.keyHints || {};
   renderGreeting(cached.username, cached.settings);
+  renderProfile(cached.settings, cached.username);
   renderStats(cached.stats);
   renderRecent(cached.threads);
   renderSpotlight();
@@ -377,6 +463,6 @@ window.electronAPI.onUpdateAvailable((info) => {
   renderHotkeys(cached.hotkeys);
   renderSettings(cached.settings);
   updateKeyHint(cached.settings.provider || 'luder');
-  renderTier(cached.tier || cached.settings.tier || 'free');
+  renderTier(cached.settings.tier || 'free');
   updateTierStatus();
 })();

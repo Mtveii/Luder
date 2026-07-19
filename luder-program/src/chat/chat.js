@@ -6,6 +6,8 @@ const thread = [];
 let assistantDiv = null;
 let pinned = true;
 let isLoading = false;
+let pendingImage = false;
+const attachmentStatusEl = document.getElementById('attachment-status');
 
 const messagesEl = document.getElementById('messages');
 const titleEl = document.getElementById('title');
@@ -27,7 +29,8 @@ function renderMessage(role, text, imageBase64 = null) {
   }
   const body = document.createElement('div');
   body.className = 'msg-body';
-  body.innerHTML = role === 'assistant' ? renderMarkdown(text) : text;
+  if (role === 'assistant') body.innerHTML = renderMarkdown(text);
+  else body.textContent = text;
   wrap.appendChild(body);
   messagesEl.appendChild(wrap);
   messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -38,17 +41,28 @@ function startAsk(promptText, imageBase64) {
   if (isLoading) return;
   isLoading = true;
   lastUserPrompt = promptText;
-  renderMessage('user', promptText, imageBase64 && thread.length === 0 ? imageBase64 : null);
+  const userImage = imageBase64 || (pendingImage ? currentImageBase64 : null);
+  const persistUser = thread.length > 0;
+  renderMessage('user', promptText, userImage);
   thread.push({ role: 'user', text: promptText });
   assistantDiv = renderMessage('assistant', '');
-  window.electronAPI.askQuestion({ imageBase64: currentImageBase64, prompt: promptText, threadHistory: thread, threadId: currentThreadId });
+  window.electronAPI.askQuestion({
+    imageBase64: userImage || currentImageBase64,
+    userImageBase64: userImage,
+    prompt: promptText,
+    threadHistory: thread.slice(0, -1),
+    persistUser,
+    threadId: currentThreadId,
+  });
+  pendingImage = false;
+  attachmentStatusEl.textContent = '';
 }
 
 window.electronAPI.onRegionCaptured(({ imageBase64, prompt, threadId, attach }) => {
   currentImageBase64 = imageBase64;
   currentThreadId = threadId;
   titleEl.textContent = (prompt || 'Analyze this image').slice(0, 60);
-  if (attach) { renderMessage('user', prompt || '', imageBase64); return; }
+  if (attach) { pendingImage = true; attachmentStatusEl.textContent = 'Image attached — add a question and send.'; return; }
   startAsk(prompt || 'Analyze this image.', imageBase64);
 });
 
@@ -113,6 +127,10 @@ document.getElementById('close-btn').addEventListener('click', () => window.elec
 document.getElementById('camera-btn').addEventListener('click', () => window.electronAPI.captureAndAttach(currentThreadId));
 
 document.getElementById('attach-btn').addEventListener('click', async () => {
-  const imageBase64 = await window.electronAPI.attachFile();
-  if (imageBase64) { currentImageBase64 = imageBase64; renderMessage('user', '(прикреплён файл)', imageBase64); }
+  const file = await window.electronAPI.attachFile();
+  if (file) {
+    currentImageBase64 = file.base64;
+    pendingImage = true;
+    attachmentStatusEl.textContent = 'Image attached — add a question and send.';
+  }
 });

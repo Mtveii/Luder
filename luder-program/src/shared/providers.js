@@ -11,29 +11,48 @@ function cleanImageBase64(imageBase64) {
 
 function cleanResponse(text) {
   if (!text) return text;
-  return text.replace(/User Safety:.*\n?/gi, '').replace(/Safety Categories:.*\n?/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+  return text.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-const SYSTEM_PROMPT = '1-2 sentences. Code→logic. Error→fix. UI→elements. No fluff.';
+function imageMimeType(imageBase64) {
+  const bytes = Buffer.from(imageBase64.slice(0, 16), 'base64');
+  return bytes[0] === 0xff && bytes[1] === 0xd8 ? 'image/jpeg' : 'image/png';
+}
 
-const SAFETY_DISABLED = [
-  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-];
+function historyMessages(history, format = 'openai') {
+  return (Array.isArray(history) ? history : [])
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.text === 'string')
+    .map((m) => {
+      if (format === 'gemini') return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.text }] };
+      return { role: m.role, content: m.text };
+    });
+}
+
+const SYSTEM_PROMPT = `You are a highly intelligent, precise AI assistant. You have access to an image provided by the user.
+
+RULES:
+- Answer based on REAL facts. If you don't know, say "I don't know".
+- NEVER hallucinate or make up information.
+- Be specific and accurate. Geography, science, history — only state verified facts.
+- Keep responses concise but complete (2-4 sentences).
+- For code: explain the logic and provide the fix.
+- For errors: identify the root cause and solution.
+- For UI: list the visible elements clearly.
+- If the image contains text, read it accurately.
+- If the image shows a location/object, identify it correctly using real-world knowledge.`;
 
 const MODELS = {
   luder: [
-    { id: 'luder-auto', name: 'Auto (recommended)' },
-    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
-    { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite' },
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
-    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' },
-    { id: 'llama-3.2-90b-vision-preview', name: 'Llama 3.2 90B (Groq)' },
-    { id: 'llama-3.2-11b-vision-instruct:free', name: 'Llama 3.2 11B (free)' },
-    { id: 'mistral-small-latest', name: 'Mistral Small' },
-    { id: 'deepseek-chat', name: 'DeepSeek V3' },
+    { id: 'openai/gpt-4o', name: 'GPT-4o (Recommended)' },
+    { id: 'anthropic/claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
+    { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash' },
+    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3' },
+    { id: 'meta-llama/llama-3.2-90b-vision-instruct', name: 'Llama 3.2 90B' },
+    { id: 'luder-auto', name: 'Auto (fallback)' },
+    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini' },
+    { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku' },
+    { id: 'google/gemini-2.0-flash-lite-001', name: 'Gemini 2.0 Flash Lite' },
+    { id: 'mistralai/mistral-small-latest', name: 'Mistral Small' },
   ],
   gemini: [
     { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
@@ -52,10 +71,15 @@ const MODELS = {
     { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' },
   ],
   openrouter: [
-    { id: 'qwen/qwen2.5-vl-72b-instruct', name: 'Qwen 2.5 VL 72B' },
-    { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B' },
-    { id: 'meta-llama/llama-3.2-11b-vision-instruct:free', name: 'Llama 3.2 Vision 11B' },
-    { id: 'mistralai/mistral-small-3.1-24b-instruct:free', name: 'Mistral Small 3.1 24B' },
+    { id: 'openai/gpt-4o', name: 'GPT-4o' },
+    { id: 'anthropic/claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
+    { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash' },
+    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3' },
+    { id: 'meta-llama/llama-3.2-90b-vision-instruct', name: 'Llama 3.2 90B' },
+    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini' },
+    { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku' },
+    { id: 'google/gemini-2.0-flash-lite-001', name: 'Gemini 2.0 Flash Lite' },
+    { id: 'mistralai/mistral-small-latest', name: 'Mistral Small' },
   ],
   groq: [
     { id: 'llama-3.2-90b-vision-preview', name: 'Llama 3.2 90B Vision' },
@@ -142,15 +166,17 @@ async function* askGemini(imageBase64, promptText, config) {
   if (!key) throw new Error('No Gemini API key. Add your key in settings.');
   const model = config.model || 'gemini-2.0-flash';
   const image = cleanImageBase64(imageBase64);
+  const mimeType = imageMimeType(image);
+
+  console.log('[GEMINI] Model:', model, 'Key length:', key.length);
 
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${key}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents: [{ parts: [{ inlineData: { mimeType: 'image/png', data: image } }, { text: promptText }] }],
-      generationConfig: { maxOutputTokens: 256, temperature: 0.1 },
-      safetySettings: SAFETY_DISABLED,
+      contents: [...historyMessages(config.threadHistory, 'gemini'), { role: 'user', parts: [{ inlineData: { mimeType, data: image } }, { text: promptText }] }],
+      generationConfig: { maxOutputTokens: 1024, temperature: 0.0 },
     }),
   });
   if (!res.ok) { const e = await res.text().catch(() => ''); throw new Error(`Gemini ${res.status}: ${e.slice(0, 200)}`); }
@@ -177,15 +203,16 @@ async function* askAnthropic(imageBase64, promptText, config) {
   if (!key) throw new Error('No Anthropic API key. Add your key in settings.');
   const model = config.model || 'claude-sonnet-4-20250514';
   const image = cleanImageBase64(imageBase64);
+  const mimeType = imageMimeType(image);
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model, max_tokens: 256, stream: true,
+      model, max_tokens: 1024, stream: true,
       system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: [
-        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: image } },
+      messages: [...historyMessages(config.threadHistory), { role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: mimeType, data: image } },
         { type: 'text', text: promptText },
       ] }],
     }),
@@ -217,15 +244,19 @@ async function* askOpenAICompatible(imageBase64, promptText, config, { baseUrl, 
   if (!key) throw new Error(`No ${providerName} API key. Add your key in settings.`);
   const model = config.model || MODELS[providerKey]?.[0]?.id;
   const image = cleanImageBase64(imageBase64);
+  const mimeType = imageMimeType(image);
+
+  console.log(`[${providerName.toUpperCase()}] Model:`, model, 'Key length:', key.length);
 
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
     body: JSON.stringify({
-      model, max_tokens: 256, temperature: 0.1, stream: true,
+      model, max_tokens: 1024, temperature: 0.0, stream: true,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: [{ type: 'text', text: promptText }, { type: 'image_url', image_url: { url: `data:image/png;base64,${image}` } }] },
+        ...historyMessages(config.threadHistory),
+        { role: 'user', content: [{ type: 'text', text: promptText }, { type: 'image_url', image_url: { url: `data:${mimeType};base64,${image}` } }] },
       ],
     }),
   });
@@ -240,10 +271,11 @@ async function* askOpenAICompatible(imageBase64, promptText, config, { baseUrl, 
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
         body: JSON.stringify({
-          model: paidModel, max_tokens: 256, temperature: 0.1, stream: true,
+          model: paidModel, max_tokens: 1024, temperature: 0.0, stream: true,
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: [{ type: 'text', text: promptText }, { type: 'image_url', image_url: { url: `data:image/png;base64,${image}` } }] },
+            ...historyMessages(config.threadHistory),
+            { role: 'user', content: [{ type: 'text', text: promptText }, { type: 'image_url', image_url: { url: `data:${mimeType};base64,${image}` } }] },
           ],
         }),
       });
@@ -344,11 +376,14 @@ async function* raceWithReplace(candidates, pool) {
 
 async function* askLuder(imageBase64, promptText, config) {
   const keys = config.apiKeys || {};
-  const model = config.model || 'luder-auto';
+  const model = config.model || 'openai/gpt-4o';
   const cfg = { ...config };
   if (model === 'luder-auto') delete cfg.model;
 
+  console.log('[LUDER] Provider: luder, Model:', model, 'Available keys:', Object.keys(keys));
+
   const all = [
+    keys.gemini && { name: 'Gemini', gen: () => askGemini(imageBase64, promptText, cfg) },
     keys.groq && { name: 'Groq', gen: () => askGroq(imageBase64, promptText, cfg) },
     keys.deepseek && { name: 'DeepSeek', gen: () => askDeepSeek(imageBase64, promptText, cfg) },
     keys.openai && { name: 'OpenAI', gen: () => askOpenAI(imageBase64, promptText, cfg) },
@@ -361,12 +396,20 @@ async function* askLuder(imageBase64, promptText, config) {
     keys.sambanova && { name: 'Sambanova', gen: () => askSambanova(imageBase64, promptText, cfg) },
   ].filter(Boolean);
 
+  console.log('[LUDER] Active providers:', all.map((p) => p.name));
+
   if (all.length === 0) throw new Error('No API key configured. Add at least one key in Settings.');
 
   if (model !== 'luder-auto') {
+    // If model has provider prefix (e.g., "openai/gpt-4o"), use OpenRouter
+    if (model.includes('/')) {
+      const orIdx = all.findIndex((p) => p.name === 'OpenRouter');
+      if (orIdx >= 0) return yield* all[orIdx].gen();
+    }
     const idx = all.findIndex((p) =>
       (model.startsWith('gpt') && p.name === 'OpenAI') ||
       (model.startsWith('claude') && p.name === 'Anthropic') ||
+      (model.startsWith('gemini') && p.name === 'Gemini') ||
       (model.includes('groq') && p.name === 'Groq') ||
       (model.startsWith('mistral') && p.name === 'Mistral') ||
       (model.startsWith('deepseek') && p.name === 'DeepSeek') ||
@@ -377,9 +420,16 @@ async function* askLuder(imageBase64, promptText, config) {
   }
 
   // Auto: гонка 3 быстрых с заменой из оставшихся 7
-  const fast = all.slice(0, 3);
-  const pool = all.slice(3);
-  yield* raceWithReplace(fast, pool);
+  const errors = [];
+  for (const candidate of all) {
+    try {
+      yield* candidate.gen();
+      return;
+    } catch (err) {
+      errors.push(`${candidate.name}: ${err.message}`);
+    }
+  }
+  throw new Error(`All providers failed. ${errors.join(' | ')}`);
 }
 
 // --- Entry point ---

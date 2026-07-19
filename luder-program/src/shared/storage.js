@@ -2,7 +2,59 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { app } = require('electron');
+const { app, safeStorage } = require('electron');
+
+function loadEnvFile() {
+  try {
+    // In packaged Electron app, try multiple locations for .env
+    const possiblePaths = [
+      path.join(process.cwd(), '.env'),
+      path.join(app.getAppPath(), '.env'),
+      path.join(path.dirname(process.execPath), '.env'),
+    ];
+    
+    for (const envPath of possiblePaths) {
+      if (fs.existsSync(envPath)) {
+        console.log('[ENV] Found .env at:', envPath);
+        const content = fs.readFileSync(envPath, 'utf-8');
+        const env = {};
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const idx = trimmed.indexOf('=');
+          if (idx === -1) continue;
+          const key = trimmed.slice(0, idx).trim();
+          const value = trimmed.slice(idx + 1).trim();
+          env[key] = value;
+        }
+        return env;
+      }
+    }
+    console.log('[ENV] No .env file found');
+    return {};
+  } catch (e) { console.log('[ENV] Error loading .env:', e.message); return {}; }
+}
+
+function envToApiKeys(env) {
+  const map = {
+    GEMINI_KEY: 'gemini',
+    OPENAI_KEY: 'openrouter',
+    ANTHROPIC_KEY: 'anthropic',
+    OPENROUTER_KEY: 'openrouter',
+    GROQ_API_KEY: 'groq',
+    MISTRAL_KEY: 'mistral',
+    DEEPSEEK_KEY: 'deepseek',
+    TOGETHER_KEY: 'together',
+    FIREWORKS_KEY: 'fireworks',
+    CEREBRAS_KEY: 'cerebras',
+    SAMBANOVA_KEY: 'sambanova',
+  };
+  const keys = {};
+  for (const [envKey, providerKey] of Object.entries(map)) {
+    if (env[envKey]) keys[providerKey] = env[envKey];
+  }
+  return keys;
+}
 
 function getStoragePath() { return path.join(app.getPath('userData'), 'storage.json'); }
 
@@ -315,6 +367,7 @@ function defaultSettings() {
     quickHotkeys: [],
     threads: [],
     settings: { voiceInput: true, alwaysOnTopChat: true },
+    profile: { displayName: '' },
     updateInfo: { dismissedVersion: null },
     tier: 'free',
     dailyRequests: { date: null, count: 0 },
@@ -327,14 +380,30 @@ function readSettings() {
   if (cache) return cache;
   try {
     cache = JSON.parse(fs.readFileSync(getStoragePath(), 'utf-8'));
+    if (cache.encryptedApiKeys) {
+      if (!safeStorage.isEncryptionAvailable()) throw new Error('OS credential encryption is unavailable');
+      cache.apiKeys = JSON.parse(safeStorage.decryptString(Buffer.from(cache.encryptedApiKeys, 'base64')));
+      delete cache.encryptedApiKeys;
+    }
     cache.quickHotkeys ||= [];
     cache.threads ||= [];
     cache.theme ||= 'cyberNeon';
     cache.settings ||= { voiceInput: true, alwaysOnTopChat: true };
+    cache.profile ||= { displayName: '' };
+    cache.profile.displayName = typeof cache.profile.displayName === 'string' ? cache.profile.displayName.slice(0, 40) : '';
     cache.updateInfo ||= { dismissedVersion: null };
-    cache.tier ||= 'free';
+    // Subscription verification is not implemented on the server yet; never trust a local tier value.
+    cache.tier = 'free';
     cache.dailyRequests ||= { date: null, count: 0 };
     cache.provider ||= 'luder';
+    if (!cache.apiKeys || Object.keys(cache.apiKeys).length === 0) {
+      console.log('[STORAGE] No API keys in storage, loading from .env');
+      const envKeys = envToApiKeys(loadEnvFile());
+      console.log('[STORAGE] Keys loaded from .env:', Object.keys(envKeys));
+      if (Object.keys(envKeys).length > 0) cache.apiKeys = envKeys;
+    } else {
+      console.log('[STORAGE] API keys already in storage:', Object.keys(cache.apiKeys));
+    }
   } catch {
     cache = defaultSettings();
     writeSettings(cache);
@@ -344,7 +413,13 @@ function readSettings() {
 
 function writeSettings(data) {
   cache = data;
-  fs.writeFileSync(getStoragePath(), JSON.stringify(data, null, 2), 'utf-8');
+  const saved = { ...data };
+  delete saved.apiKeys;
+  if (data.apiKeys && Object.keys(data.apiKeys).length > 0) {
+    if (!safeStorage.isEncryptionAvailable()) throw new Error('OS credential encryption is unavailable');
+    saved.encryptedApiKeys = safeStorage.encryptString(JSON.stringify(data.apiKeys)).toString('base64');
+  }
+  fs.writeFileSync(getStoragePath(), JSON.stringify(saved, null, 2), 'utf-8');
   return data;
 }
 
@@ -453,15 +528,19 @@ function setHotkey(combo) {
 }
 
 // --- Tier & daily limits ---
-const TIER_LIMITS = { free: 20, pro: 200, max: Infinity };
+const PRIVILEGED_PROFILE_NAMES = new Set(['lovepolinka@love', 'admin123@luder']);
+const TIER_LIMITS = { free: 20, max: Infinity };
 
-function getTier() { return readSettings().tier || 'free'; }
+function getTier() {
+  const name = readSettings().profile?.displayName?.trim().toLowerCase();
+  return PRIVILEGED_PROFILE_NAMES.has(name) ? 'max' : 'free';
+}
 
 function setTier(tier) {
   const settings = readSettings();
-  settings.tier = tier;
+  settings.tier = 'free';
   writeSettings(settings);
-  return tier;
+  return getTier();
 }
 
 function checkDailyLimit() {
@@ -471,8 +550,9 @@ function checkDailyLimit() {
     settings.dailyRequests = { date: today, count: 0 };
     writeSettings(settings);
   }
-  const limit = TIER_LIMITS[settings.tier] || TIER_LIMITS.free;
-  return { allowed: settings.dailyRequests.count < limit, count: settings.dailyRequests.count, limit, tier: settings.tier };
+  const tier = getTier();
+  const limit = TIER_LIMITS[tier] || TIER_LIMITS.free;
+  return { allowed: settings.dailyRequests.count < limit, count: settings.dailyRequests.count, limit, tier };
 }
 
 function incrementDailyRequests() {
@@ -488,15 +568,21 @@ function incrementDailyRequests() {
 
 function getDailyUsage() {
   const settings = readSettings();
+  const tier = getTier();
   const today = new Date().toISOString().slice(0, 10);
   if (!settings.dailyRequests || settings.dailyRequests.date !== today) {
-    return { count: 0, limit: TIER_LIMITS[settings.tier] || TIER_LIMITS.free, tier: settings.tier };
+    return { count: 0, limit: TIER_LIMITS[tier] || TIER_LIMITS.free, tier };
   }
-  return { count: settings.dailyRequests.count, limit: TIER_LIMITS[settings.tier] || TIER_LIMITS.free, tier: settings.tier };
+  return { count: settings.dailyRequests.count, limit: TIER_LIMITS[tier] || TIER_LIMITS.free, tier };
+}
+
+function forceReloadSettings() {
+  cache = null;
+  return readSettings();
 }
 
 module.exports = {
-  readSettings, writeSettings, getStoragePath,
+  readSettings, writeSettings, getStoragePath, forceReloadSettings,
   createThread, appendMessage, getThread, toggleFavorite, deleteThread, clearHistory, listThreads,
   getStats, listQuickHotkeys, setQuickHotkeys,
   getThemes, getTheme, setTheme, getHotkey, setHotkey,

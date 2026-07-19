@@ -43,3 +43,4 @@ body { margin: 0; display: flex; flex-direction: column; height: 100vh; font-fam
 #send-btn:hover { opacity: 0.9; }
 #prompt { flex: 1; resize: none; background: var(--surface, #1a1a1a); color: var(--text, #eee); border: 1px solid var(--border, rgba(255,255,255,0.08)); border-radius: 8px; padding: 6px; max-height: 100px; outline: none; transition: all 0.2s; }
 #prompt:focus { border-color: var(--primary, #8fd400); }
+#attachment-status { min-height: 0; padding: 0 8px 6px; color: var(--gray, #999); font-size: 11px; }
