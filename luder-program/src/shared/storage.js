@@ -38,7 +38,7 @@ function loadEnvFile() {
 function envToApiKeys(env) {
   const map = {
     GEMINI_KEY: 'gemini',
-    OPENAI_KEY: 'openrouter',
+    OPENAI_KEY: 'openai',
     ANTHROPIC_KEY: 'anthropic',
     OPENROUTER_KEY: 'openrouter',
     GROQ_API_KEY: 'groq',
@@ -439,14 +439,25 @@ function createThread({ title, provider, imageBase64 }) {
   return thread;
 }
 
+let _appendTimer = null;
+
 function appendMessage(threadId, role, text, imageBase64 = null) {
   const settings = readSettings();
   const thread = settings.threads.find((t) => t.id === threadId);
   if (!thread) return null;
   thread.messages.push({ role, text, imageBase64, ts: Date.now() });
   thread.updatedAt = Date.now();
-  writeSettings(settings);
+  clearTimeout(_appendTimer);
+  _appendTimer = setTimeout(() => writeSettings(settings), 500);
   return thread;
+}
+
+function flushPendingWrites() {
+  if (_appendTimer) {
+    clearTimeout(_appendTimer);
+    _appendTimer = null;
+    writeSettings(readSettings());
+  }
 }
 
 function getThread(threadId) { return readSettings().threads.find((t) => t.id === threadId) || null; }
@@ -587,4 +598,5 @@ module.exports = {
   getStats, listQuickHotkeys, setQuickHotkeys,
   getThemes, getTheme, setTheme, getHotkey, setHotkey,
   getTier, setTier, checkDailyLimit, incrementDailyRequests, getDailyUsage, TIER_LIMITS,
+  flushPendingWrites,
 };

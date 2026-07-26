@@ -1,5 +1,9 @@
 // providers.js — all AI requests go directly from user's PC, теперь настоящим стримом
 
+const { MODELS_BY_PROVIDER: MODELS, KEY_HINTS, getModels, SYSTEM_PROMPT } = require('../../ai_config');
+const { validateModel } = require('../../modelValidator');
+const { ProviderError, RateLimitError, InvalidModelError } = require('../../errors');
+
 function cleanImageBase64(imageBase64) {
   if (!imageBase64 || typeof imageBase64 !== 'string') throw new Error('No image data received');
   let clean = imageBase64.replace(/^data:image\/[a-zA-Z]+;base64,/i, '');
@@ -28,129 +32,32 @@ function historyMessages(history, format = 'openai') {
     });
 }
 
-const SYSTEM_PROMPT = `You are a highly intelligent, precise AI assistant. You have access to an image provided by the user.
 
-RULES:
-- Answer based on REAL facts. If you don't know, say "I don't know".
-- NEVER hallucinate or make up information.
-- Be specific and accurate. Geography, science, history — only state verified facts.
-- Keep responses concise but complete (2-4 sentences).
-- For code: explain the logic and provide the fix.
-- For errors: identify the root cause and solution.
-- For UI: list the visible elements clearly.
-- If the image contains text, read it accurately.
-- If the image shows a location/object, identify it correctly using real-world knowledge.`;
-
-const MODELS = {
-  luder: [
-    { id: 'openai/gpt-4o', name: 'GPT-4o (Recommended)' },
-    { id: 'anthropic/claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
-    { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash' },
-    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3' },
-    { id: 'meta-llama/llama-3.2-90b-vision-instruct', name: 'Llama 3.2 90B' },
-    { id: 'luder-auto', name: 'Auto (fallback)' },
-    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini' },
-    { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku' },
-    { id: 'google/gemini-2.0-flash-lite-001', name: 'Gemini 2.0 Flash Lite' },
-    { id: 'mistralai/mistral-small-latest', name: 'Mistral Small' },
-  ],
-  gemini: [
-    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
-    { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite' },
-    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
-    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
-  ],
-  openai: [
-    { id: 'gpt-4o', name: 'GPT-4o' },
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
-    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
-  ],
-  anthropic: [
-    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
-    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' },
-    { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' },
-  ],
-  openrouter: [
-    { id: 'openai/gpt-4o', name: 'GPT-4o' },
-    { id: 'anthropic/claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
-    { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash' },
-    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3' },
-    { id: 'meta-llama/llama-3.2-90b-vision-instruct', name: 'Llama 3.2 90B' },
-    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini' },
-    { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku' },
-    { id: 'google/gemini-2.0-flash-lite-001', name: 'Gemini 2.0 Flash Lite' },
-    { id: 'mistralai/mistral-small-latest', name: 'Mistral Small' },
-  ],
-  groq: [
-    { id: 'llama-3.2-90b-vision-preview', name: 'Llama 3.2 90B Vision' },
-    { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant' },
-    { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B' },
-  ],
-  mistral: [
-    { id: 'mistral-small-latest', name: 'Mistral Small' },
-    { id: 'mistral-medium-latest', name: 'Mistral Medium' },
-    { id: 'mistral-large-latest', name: 'Mistral Large' },
-  ],
-  deepseek: [
-    { id: 'deepseek-chat', name: 'DeepSeek V3' },
-    { id: 'deepseek-reasoner', name: 'DeepSeek R1' },
-  ],
-  together: [
-    { id: 'meta-llama/Llama-Vision-Free', name: 'Llama Vision Free' },
-    { id: 'Qwen/Qwen2.5-VL-72B-Instruct', name: 'Qwen 2.5 VL 72B' },
-    { id: 'meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo', name: 'Llama 3.2 90B Vision' },
-    { id: 'deepseek-ai/DeepSeek-V3', name: 'DeepSeek V3' },
-  ],
-  fireworks: [
-    { id: 'accounts/fireworks/models/llama-v3p2-90b-vision-instruct', name: 'Llama 3.2 90B Vision' },
-    { id: 'accounts/fireworks/models/llama-v3p2-11b-vision-instruct', name: 'Llama 3.2 11B Vision' },
-  ],
-  cerebras: [
-    { id: 'llama-3.2-vision-90b', name: 'Llama 3.2 Vision 90B' },
-    { id: 'llama-3.2-vision-11b', name: 'Llama 3.2 Vision 11B' },
-  ],
-  sambanova: [
-    { id: 'Meta-Llama-3.2-90B-Vision-Instruct', name: 'Llama 3.2 90B Vision' },
-    { id: 'DeepSeek-V3-0324', name: 'DeepSeek V3' },
-  ],
-};
-
-const KEY_HINTS = {
-  gemini: '_starts with AIza_',
-  openai: '_starts with sk-_',
-  anthropic: '_starts with sk-ant-_',
-  openrouter: '_starts with sk-or-_',
-  groq: '_starts with gsk_',
-  mistral: '_random string from console.mistral.ai_',
-  deepseek: '_starts with sk-_ (platform.deepseek.com)',
-  together: '_from api.together.xyz/settings_',
-  fireworks: '_starts with fw_ (fireworks.ai)',
-  cerebras: '_from cloud.cerebras.ai_',
-  sambanova: '_from cloud.sambanova.ai_',
-};
-
-function getModels(provider) { return MODELS[provider] || []; }
 
 // --- Общий построчный SSE-ридер ---
-async function* readLines(stream) {
+async function* readLines(stream, signal) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
-    for (const line of lines) yield line;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) yield line;
+    }
+    if (buffer) yield buffer;
+  } finally {
+    try { reader.cancel(); } catch {}
   }
-  if (buffer) yield buffer;
 }
 
 // ============ Gemini (streamGenerateContent?alt=sse) ============
-async function* readGeminiDeltas(stream) {
+async function* readGeminiDeltas(stream, signal) {
   let got = false;
-  for await (const line of readLines(stream)) {
+  for await (const line of readLines(stream, signal)) {
     const trimmed = line.trim();
     if (!trimmed.startsWith('data: ')) continue;
     let parsed;
@@ -165,30 +72,33 @@ async function* askGemini(imageBase64, promptText, config) {
   const key = config.apiKeys?.gemini;
   if (!key) throw new Error('No Gemini API key. Add your key in settings.');
   const model = config.model || 'gemini-2.0-flash';
+  validateModel(model, 'gemini');
   const image = cleanImageBase64(imageBase64);
   const mimeType = imageMimeType(image);
 
   console.log('[GEMINI] Model:', model, 'Key length:', key.length);
 
+  const extendedPrompt = SYSTEM_PROMPT + (config.profileContext || '');
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${key}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal: config.signal,
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      systemInstruction: { parts: [{ text: extendedPrompt }] },
       contents: [...historyMessages(config.threadHistory, 'gemini'), { role: 'user', parts: [{ inlineData: { mimeType, data: image } }, { text: promptText }] }],
       generationConfig: { maxOutputTokens: 1024, temperature: 0.0 },
     }),
   });
-  if (!res.ok) { const e = await res.text().catch(() => ''); throw new Error(`Gemini ${res.status}: ${e.slice(0, 200)}`); }
-  if (!res.body) throw new Error('Gemini: empty stream');
+  if (!res.ok) { const e = await res.text().catch(() => ''); const msg = `Gemini ${res.status}: ${e.slice(0, 200)}`; if (res.status === 429) throw new RateLimitError('Gemini'); throw new ProviderError('Gemini', res.status, e.slice(0, 200), msg); }
+  if (!res.body) throw new ProviderError('Gemini', 0, '', 'Gemini: empty stream');
 
-  yield* readGeminiDeltas(res.body);
+  yield* readGeminiDeltas(res.body, config.signal);
 }
 
 // ============ Anthropic (stream: true) ============
-async function* readAnthropicDeltas(stream) {
+async function* readAnthropicDeltas(stream, signal) {
   let got = false;
-  for await (const line of readLines(stream)) {
+  for await (const line of readLines(stream, signal)) {
     const trimmed = line.trim();
     if (!trimmed.startsWith('data: ')) continue;
     let parsed;
@@ -202,31 +112,34 @@ async function* askAnthropic(imageBase64, promptText, config) {
   const key = config.apiKeys?.anthropic;
   if (!key) throw new Error('No Anthropic API key. Add your key in settings.');
   const model = config.model || 'claude-sonnet-4-20250514';
+  validateModel(model, 'anthropic');
   const image = cleanImageBase64(imageBase64);
   const mimeType = imageMimeType(image);
 
+  const extendedPrompt = SYSTEM_PROMPT + (config.profileContext || '');
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    signal: config.signal,
     body: JSON.stringify({
       model, max_tokens: 1024, stream: true,
-      system: SYSTEM_PROMPT,
+      system: extendedPrompt,
       messages: [...historyMessages(config.threadHistory), { role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: mimeType, data: image } },
         { type: 'text', text: promptText },
       ] }],
     }),
   });
-  if (!res.ok) { const e = await res.text().catch(() => ''); throw new Error(`Anthropic ${res.status}: ${e.slice(0, 200)}`); }
-  if (!res.body) throw new Error('Anthropic: empty stream');
+  if (!res.ok) { const e = await res.text().catch(() => ''); const msg = `Anthropic ${res.status}: ${e.slice(0, 200)}`; if (res.status === 429) throw new RateLimitError('Anthropic'); throw new ProviderError('Anthropic', res.status, e.slice(0, 200), msg); }
+  if (!res.body) throw new ProviderError('Anthropic', 0, '', 'Anthropic: empty stream');
 
-  yield* readAnthropicDeltas(res.body);
+  yield* readAnthropicDeltas(res.body, config.signal);
 }
 
 // ============ OpenAI-совместимый (9 провайдеров) ============
-async function* readOpenAiDeltas(stream, providerName) {
+async function* readOpenAiDeltas(stream, providerName, signal) {
   let got = false;
-  for await (const line of readLines(stream)) {
+  for await (const line of readLines(stream, signal)) {
     const trimmed = line.trim();
     if (!trimmed.startsWith('data: ')) continue;
     const data = trimmed.slice(6);
@@ -243,18 +156,21 @@ async function* askOpenAICompatible(imageBase64, promptText, config, { baseUrl, 
   const key = config.apiKeys?.[providerKey];
   if (!key) throw new Error(`No ${providerName} API key. Add your key in settings.`);
   const model = config.model || MODELS[providerKey]?.[0]?.id;
+  validateModel(model, providerKey);
   const image = cleanImageBase64(imageBase64);
   const mimeType = imageMimeType(image);
+  const extendedPrompt = SYSTEM_PROMPT + (config.profileContext || '');
 
   console.log(`[${providerName.toUpperCase()}] Model:`, model, 'Key length:', key.length);
 
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    signal: config.signal,
     body: JSON.stringify({
       model, max_tokens: 1024, temperature: 0.0, stream: true,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: extendedPrompt },
         ...historyMessages(config.threadHistory),
         { role: 'user', content: [{ type: 'text', text: promptText }, { type: 'image_url', image_url: { url: `data:${mimeType};base64,${image}` } }] },
       ],
@@ -270,25 +186,27 @@ async function* askOpenAICompatible(imageBase64, promptText, config, { baseUrl, 
       const retry = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        signal: config.signal,
         body: JSON.stringify({
           model: paidModel, max_tokens: 1024, temperature: 0.0, stream: true,
           messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'system', content: extendedPrompt },
             ...historyMessages(config.threadHistory),
             { role: 'user', content: [{ type: 'text', text: promptText }, { type: 'image_url', image_url: { url: `data:${mimeType};base64,${image}` } }] },
           ],
         }),
       });
-      if (!retry.ok) { const re = await retry.text().catch(() => ''); throw new Error(`${providerName} ${retry.status}: ${re.slice(0, 200)}`); }
-      if (!retry.body) throw new Error(`${providerName}: empty stream`);
-      yield* readOpenAiDeltas(retry.body, providerName);
+      if (!retry.ok) { const re = await retry.text().catch(() => ''); throw new ProviderError(providerName, retry.status, re.slice(0, 200)); }
+      if (!retry.body) throw new ProviderError(providerName, 0, '', `${providerName}: empty stream`);
+      yield* readOpenAiDeltas(retry.body, providerName, config.signal);
       return;
     }
-    throw new Error(`${providerName} ${res.status}: ${msg}`);
+    if (res.status === 429) throw new RateLimitError(providerName);
+    throw new ProviderError(providerName, res.status, msg);
   }
-  if (!res.body) throw new Error(`${providerName}: empty stream`);
+  if (!res.body) throw new ProviderError(providerName, 0, '', `${providerName}: empty stream`);
 
-  yield* readOpenAiDeltas(res.body, providerName);
+  yield* readOpenAiDeltas(res.body, providerName, config.signal);
 }
 
 function askOpenAI(imageBase64, promptText, config) {
@@ -442,11 +360,11 @@ function ask(imageBase64, promptText, config) {
     case 'openrouter':return askOpenRouter(imageBase64, promptText, config);
     case 'groq':      return askGroq(imageBase64, promptText, config);
     case 'mistral':   return askMistral(imageBase64, promptText, config);
-    case 'deepseek':  return askDeepSeek(imageBase64, promptText, config);
     case 'together':  return askTogether(imageBase64, promptText, config);
     case 'fireworks': return askFireworks(imageBase64, promptText, config);
-    case 'cerebras':  return askCerebras(imageBase64, promptText, config);
     case 'sambanova': return askSambanova(imageBase64, promptText, config);
+    case 'deepseek':  return askDeepSeek(imageBase64, promptText, config);
+    case 'cerebras':  return askCerebras(imageBase64, promptText, config);
     default: throw new Error('Select a provider in settings');
   }
 }

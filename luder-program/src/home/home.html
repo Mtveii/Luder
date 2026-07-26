@@ -107,6 +107,15 @@
         <button id="save-profile" class="btn-primary">Save profile</button>
         <span id="profile-status"></span>
       </div>
+      <div class="settings-section">
+        <h3>AI context (profile.md)</h3>
+        <div class="settings-hint">This text is injected into the AI system prompt. The <code>&lt;!-- AUTO-TOPICS --&gt;</code> section is managed automatically from conversation topics.</div>
+        <textarea id="profile-context" rows="10" style="width:100%;font-family:monospace;font-size:13px;resize:vertical;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;box-sizing:border-box"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="save-profile-context" class="btn-primary">Save context</button>
+          <span id="profile-context-status"></span>
+        </div>
+      </div>
     </section>
 
     <section id="page-settings" class="page">
@@ -188,6 +197,7 @@
         <button id="check-update">Проверить обновления</button>
         <span id="status"></span>
       </div>
+      <div id="version-display" style="text-align:right;margin-top:16px;font-size:12px;color:var(--gray);opacity:0.5">Luder v<span id="app-version"></span></div>
     </section>
   </main>
 

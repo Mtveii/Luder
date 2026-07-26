@@ -91,8 +91,13 @@ window.electronAPI.onStreamChunk((chunk) => {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 });
 
-window.electronAPI.onStreamEnd(() => {
-  if (assistantDiv) thread.push({ role: 'assistant', text: assistantDiv.dataset.raw || '' });
+window.electronAPI.onStreamEnd((data) => {
+  if (assistantDiv) {
+    const finalText = data?.cleanedText || assistantDiv.dataset.raw || '';
+    assistantDiv.dataset.raw = finalText;
+    assistantDiv.innerHTML = renderMarkdown(finalText);
+    thread.push({ role: 'assistant', text: finalText });
+  }
   assistantDiv = null;
   isLoading = false;
 });

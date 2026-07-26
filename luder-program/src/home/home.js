@@ -51,27 +51,8 @@ document.getElementById('nav-home').addEventListener('click', () => showPage('ho
 document.getElementById('nav-history').addEventListener('click', () => showPage('history'));
 document.getElementById('nav-themes').addEventListener('click', () => showPage('themes'));
 document.getElementById('nav-hotkeys').addEventListener('click', () => showPage('hotkeys'));
-document.getElementById('nav-profile').addEventListener('click', () => showPage('profile'));
+document.getElementById('nav-profile').addEventListener('click', () => { showPage('profile'); loadProfileContext(); });
 document.getElementById('nav-settings').addEventListener('click', () => showPage('settings'));
-
-// --- Применение темы ---
-function applyThemeCSS(theme) {
-  const r = document.documentElement.style;
-  r.setProperty('--bg', theme.bg);
-  r.setProperty('--surface', theme.surface);
-  r.setProperty('--primary', theme.primary);
-  r.setProperty('--secondary', theme.secondary);
-  r.setProperty('--accent', theme.accent);
-  r.setProperty('--text', theme.text);
-  r.setProperty('--gray', theme.gray);
-  r.setProperty('--border', theme.border || 'rgba(255,255,255,0.08)');
-  r.setProperty('--hover', theme.hover || 'rgba(255,255,255,0.05)');
-  r.setProperty('--selection', theme.selection || theme.primary + '33');
-  r.setProperty('--btn-bg', theme.btnBg || theme.surface);
-  r.setProperty('--btn-text', theme.btnText || theme.text);
-  document.body.style.background = theme.bg;
-  document.body.style.color = theme.text;
-}
 
 // --- Рендер из кеша (без доп. IPC) ---
 function renderGreeting(name, settings) {
@@ -200,6 +181,25 @@ document.getElementById('save-profile').addEventListener('click', async () => {
   updateTierStatus();
   const status = document.getElementById('profile-status');
   status.textContent = usage.tier === 'max' ? 'Saved — Max access enabled' : 'Saved';
+  setTimeout(() => { status.textContent = ''; }, 2000);
+});
+
+async function loadProfileContext() {
+  if (!cached) return;
+  const deviceId = cached.settings.deviceId;
+  if (!deviceId) return;
+  const content = await window.electronAPI.getProfileContext(deviceId);
+  document.getElementById('profile-context').value = content;
+}
+
+document.getElementById('save-profile-context').addEventListener('click', async () => {
+  if (!cached) return;
+  const deviceId = cached.settings.deviceId;
+  if (!deviceId) { document.getElementById('profile-context-status').textContent = 'No device ID'; return; }
+  const content = document.getElementById('profile-context').value;
+  await window.electronAPI.setProfileContext(deviceId, content);
+  const status = document.getElementById('profile-context-status');
+  status.textContent = 'Saved';
   setTimeout(() => { status.textContent = ''; }, 2000);
 });
 
@@ -404,6 +404,23 @@ document.getElementById('save').addEventListener('click', async () => {
   setTimeout(() => { statusEl.textContent = ''; }, 3000);
 });
 
+function createDownloadButton(label, url, container, opts = {}) {
+  const btn = document.createElement('button');
+  btn.textContent = label;
+  btn.style.cssText = opts.style || 'margin-left:12px;padding:4px 16px;border-radius:8px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-weight:600;';
+  btn.addEventListener('click', async () => {
+    btn.textContent = 'Загрузка...';
+    btn.disabled = true;
+    try {
+      await window.electronAPI.downloadUpdate(url);
+    } catch (err) {
+      btn.textContent = opts.retryLabel || 'Ошибка';
+      if (opts.retryMs) setTimeout(() => { btn.textContent = label; btn.disabled = false; }, opts.retryMs);
+    }
+  });
+  container.appendChild(btn);
+}
+
 document.getElementById('check-update').addEventListener('click', async () => {
   statusEl.textContent = 'Проверка...';
   try {
@@ -411,15 +428,9 @@ document.getElementById('check-update').addEventListener('click', async () => {
     if (result.error) statusEl.textContent = `Не удалось проверить обновления: ${result.error}`;
     else if (result.hasUpdate) {
       statusEl.textContent = `Доступна версия ${result.latestVersion}. `;
-      const dlBtn = document.createElement('button');
-      dlBtn.textContent = 'Обновить сейчас';
-      dlBtn.style.cssText = 'padding:4px 12px;border-radius:6px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-weight:600;margin-left:4px;';
-      dlBtn.addEventListener('click', async () => {
-        dlBtn.textContent = 'Загрузка...';
-        dlBtn.disabled = true;
-        try { await window.electronAPI.downloadUpdate(result.url); } catch (err) { dlBtn.textContent = 'Ошибка'; }
+      createDownloadButton('Обновить сейчас', result.url, statusEl, {
+        style: 'padding:4px 12px;border-radius:6px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-weight:600;margin-left:4px;',
       });
-      statusEl.appendChild(dlBtn);
     } else statusEl.textContent = 'У вас последняя версия';
   } catch (err) {
     statusEl.textContent = `Ошибка: ${err.message}`;
@@ -431,22 +442,7 @@ window.electronAPI.onUpdateAvailable((info) => {
   updateBanner.classList.remove('hidden');
   updateBanner.style.animation = 'fadeSlideIn 0.4s ease';
   updateBanner.textContent = `Доступна новая версия ${info.latestVersion}.`;
-  if (info.url) {
-    const btn = document.createElement('button');
-    btn.textContent = 'Обновить';
-    btn.style.cssText = 'margin-left:12px;padding:4px 16px;border-radius:8px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-weight:600;';
-    btn.addEventListener('click', async () => {
-      btn.textContent = 'Загрузка...';
-      btn.disabled = true;
-      try {
-        await window.electronAPI.downloadUpdate(info.url);
-      } catch (err) {
-        btn.textContent = 'Ошибка';
-        setTimeout(() => { btn.textContent = 'Обновить'; btn.disabled = false; }, 2000);
-      }
-    });
-    updateBanner.appendChild(btn);
-  }
+  if (info.url) createDownloadButton('Обновить', info.url, updateBanner, { retryMs: 2000 });
 });
 
 // --- INIT: один IPC call ---
@@ -465,4 +461,6 @@ window.electronAPI.onUpdateAvailable((info) => {
   updateKeyHint(cached.settings.provider || 'luder');
   renderTier(cached.settings.tier || 'free');
   updateTierStatus();
+  loadProfileContext();
+  document.getElementById('app-version').textContent = cached.version || '?';
 })();

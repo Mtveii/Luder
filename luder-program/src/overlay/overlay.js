@@ -101,7 +101,7 @@ window.electronAPI.on('selectionDone', (data) => {
   lastRect = data.rect;
   if (data.rect.width < 5 || data.rect.height < 5) { window.electronAPI.closeOverlay(); return; }
 
-  if (presetPrompt) { window.electronAPI.captureRegion(data.rect, presetPrompt); return; }
+  if (presetPrompt) { window.electronAPI.captureRegion(data.rect, presetPrompt, true); return; }
 
   // Show ask-bar only on the display where mouse was released
   if (data.askBarDisplayIndex === displayIndex) {

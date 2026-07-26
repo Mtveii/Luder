@@ -4,6 +4,13 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const providers = require('./src/shared/providers');
+const { KEY_HINTS, getModels } = require('./ai_config');
+const modelRouter = require('./model_router');
+const { validateConfig } = require('./modelValidator');
+const { mapError } = require('./errorMapper');
+const { buildContext } = require('./src/shared/context_manager');
+const memoryManager = require('./src/shared/memory_manager');
+const chatManager = require('./src/shared/chat_manager');
 const storage = require('./src/shared/storage');
 const updater = require('./src/shared/updater');
 const { SERVER_URL } = require('./config');
@@ -14,13 +21,16 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    // Second instance tried to start — bring existing window to front
     if (homeWindow && !homeWindow.isDestroyed()) {
-      if (homeWindow.isMinimized()) homeWindow.restore();
+      homeWindow.show();
+      homeWindow.restore();
       homeWindow.focus();
     } else if (chatWindow && !chatWindow.isDestroyed()) {
-      if (chatWindow.isMinimized()) chatWindow.restore();
+      chatWindow.show();
+      chatWindow.restore();
       chatWindow.focus();
+    } else {
+      createHomeWindow();
     }
   });
 }
@@ -69,6 +79,8 @@ const CHANNELS = {
   UPDATE_HOTKEY: 'update-hotkey',
   GET_ALL: 'get-all',
   GET_MODELS: 'get-models',
+  GET_PROFILE_CONTEXT: 'get-profile-context',
+  SET_PROFILE_CONTEXT: 'set-profile-context',
 };
 
 let tray = null;
@@ -237,43 +249,39 @@ function createChatWindow({ imageBase64 = null, prompt = null, threadId = null, 
 }
 
 function createHomeWindow() {
-  if (homeWindow && !homeWindow.isDestroyed()) { homeWindow.focus(); return; }
+  if (homeWindow && !homeWindow.isDestroyed()) {
+    homeWindow.show();
+    homeWindow.restore();
+    homeWindow.focus();
+    return;
+  }
   homeWindow = new BrowserWindow({ width: 900, height: 640, icon: path.join(__dirname, 'assets/icon.png'), webPreferences: windowDefaults() });
   homeWindow.loadFile(path.join(__dirname, 'src/home/home.html'));
   homeWindow.on('closed', () => { homeWindow = null; });
 }
 
-// --- Capture each monitor separately ---
-async function captureMonitors() {
+// --- Capture all displays in parallel ---
+async function captureDisplays() {
   const displays = screen.getAllDisplays();
-  const captures = [];
-  for (const d of displays) {
+  const results = await Promise.all(displays.map(async (d) => {
     const b = d.bounds;
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: b.width, height: b.height } });
     let source = sources.find((s) => s.display_id === String(d.id));
     if (!source) source = sources[0];
-    if (source) {
-      captures.push({ displayId: d.id, bounds: b, dataUrl: source.thumbnail.toDataURL() });
-    }
-  }
-  return captures;
+    if (!source) return null;
+    return { displayId: d.id, bounds: b, image: source.thumbnail, dataUrl: source.thumbnail.toDataURL() };
+  }));
+  return results.filter(Boolean);
+}
+
+async function captureMonitors() {
+  const caps = await captureDisplays();
+  return caps.map((c) => ({ displayId: c.displayId, bounds: c.bounds, dataUrl: c.dataUrl }));
 }
 
 // --- Capture region: crop per monitor, stitch into one image ---
 async function captureRegion(rect) {
-  const displays = screen.getAllDisplays();
-
-  // Capture each monitor at full resolution
-  const monitorImages = [];
-  for (const d of displays) {
-    const b = d.bounds;
-    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: b.width, height: b.height } });
-    let source = sources.find((s) => s.display_id === String(d.id));
-    if (!source) source = sources[0];
-    if (source) {
-      monitorImages.push({ bounds: b, image: source.thumbnail });
-    }
-  }
+  const monitorImages = await captureDisplays();
 
   // For each monitor, crop the intersection with the selection
   const pieces = [];
@@ -384,6 +392,11 @@ app.whenReady().then(() => {
   // Force reload settings to ensure API keys from .env are loaded
   const settings = storage.forceReloadSettings();
   console.log('[APP] Loaded API keys:', Object.keys(settings.apiKeys || {}));
+  try {
+    validateConfig(settings);
+  } catch (err) {
+    console.warn('[APP] Config validation:', err.message);
+  }
 
   const savedHotkey = storage.getHotkey();
   registerMainHotkey(savedHotkey);
@@ -404,7 +417,7 @@ app.whenReady().then(() => {
   // --- IPC handlers ---
 
   // Capture region from overlay selection
-  ipcMain.on(CHANNELS.CAPTURE_REGION, async (_e, { rect, prompt }) => {
+  ipcMain.on(CHANNELS.CAPTURE_REGION, async (_e, { rect, prompt, quickHotkey }) => {
     try {
       const imageBase64 = await captureRegion(rect);
       closeAllOverlays();
@@ -418,8 +431,15 @@ app.whenReady().then(() => {
       }
 
       const finalPrompt = prompt || 'Analyze this image.';
-      const thread = storage.createThread({ title: finalPrompt, provider: storage.readSettings().provider, imageBase64 });
-      createChatWindow({ imageBase64, prompt: finalPrompt, threadId: thread.id });
+      const settings = storage.readSettings();
+      const threadId = chatManager.getOrCreateThread({
+        title: finalPrompt,
+        provider: settings.provider,
+        imageBase64,
+        isQuickHotkey: !!quickHotkey,
+        hotkeyPrompt: quickHotkey ? prompt : null,
+      });
+      createChatWindow({ imageBase64, prompt: finalPrompt, threadId });
     } catch (err) {
       console.error('Capture error:', err);
       closeAllOverlays();
@@ -472,10 +492,9 @@ app.whenReady().then(() => {
         height: Math.abs(selection.current.y - selection.start.y),
       };
 
-      // Broadcast selectionChanged + selectionDone to ALL overlays
+      // Broadcast selectionDone to ALL overlays
       for (const [, win] of overlayWindows) {
         if (!win.isDestroyed()) {
-          win.webContents.send('selectionChanged', { start: { ...selection.start }, current: { ...selection.current } });
           win.webContents.send('selectionDone', { rect, askBarDisplayIndex: senderDisplayIndex });
         }
       }
@@ -483,9 +502,10 @@ app.whenReady().then(() => {
     }
 
     // Broadcast selectionChanged to ALL overlays
+    const state = { start: { ...selection.start }, current: { ...selection.current } };
     for (const [, win] of overlayWindows) {
       if (!win.isDestroyed()) {
-        win.webContents.send('selectionChanged', { start: { ...selection.start }, current: { ...selection.current } });
+        win.webContents.send('selectionChanged', state);
       }
     }
   });
@@ -513,11 +533,22 @@ app.whenReady().then(() => {
     themes: storage.getThemes(),
     hotkeys: storage.listQuickHotkeys(),
     username: os.userInfo().username,
-    keyHints: providers.KEY_HINTS,
+    keyHints: KEY_HINTS,
+    version: app.getVersion(),
   }));
 
   ipcMain.handle(CHANNELS.GET_SETTINGS, async () => storage.readSettings());
   ipcMain.handle(CHANNELS.SET_SETTINGS, async (_e, data) => storage.writeSettings(data));
+
+  ipcMain.handle(CHANNELS.GET_PROFILE_CONTEXT, async (_e, deviceId) => {
+    if (!deviceId) return '';
+    return memoryManager.readProfile(deviceId);
+  });
+  ipcMain.handle(CHANNELS.SET_PROFILE_CONTEXT, async (_e, { deviceId, content }) => {
+    if (!deviceId) throw new Error('No deviceId');
+    memoryManager.writeProfileRaw(deviceId, content);
+    return true;
+  });
 
   ipcMain.handle(CHANNELS.GET_STATS, async () => storage.getStats());
   ipcMain.handle(CHANNELS.GET_THREADS, async () => storage.listThreads());
@@ -553,7 +584,7 @@ app.whenReady().then(() => {
     return { ok: registered, combo: currentMainHotkey, registered };
   });
 
-  ipcMain.handle(CHANNELS.GET_MODELS, async (_e, provider) => providers.getModels(provider));
+  ipcMain.handle(CHANNELS.GET_MODELS, async (_e, provider) => getModels(provider));
 
   ipcMain.handle(CHANNELS.CHECK_FOR_UPDATES, async () => updater.checkForUpdates(app.getVersion()));
 
@@ -593,22 +624,45 @@ app.whenReady().then(() => {
       if (payload.persistUser && payload.threadId) {
         storage.appendMessage(payload.threadId, 'user', payload.prompt || '', payload.userImageBase64 || null);
       }
-      const iterator = await providers.ask(payload.imageBase64, payload.prompt, {
-        provider: settings.provider, model: settings.model, apiKeys: settings.apiKeys, deviceId: settings.deviceId,
+      const { threadHistory, profileContext } = buildContext({
         threadHistory: payload.threadHistory || [],
+        deviceId: settings.deviceId,
       });
+      const ac = new AbortController();
+      sender.once('destroyed', () => ac.abort());
+      const iterator = settings.provider === 'luder'
+        ? modelRouter.modelRouterAsk(payload.imageBase64, payload.prompt, {
+            model: settings.model,
+            apiKeys: settings.apiKeys,
+            deviceId: settings.deviceId,
+            threadHistory,
+            profileContext,
+            signal: ac.signal,
+          })
+        : await providers.ask(payload.imageBase64, payload.prompt, {
+            provider: settings.provider, model: settings.model, apiKeys: settings.apiKeys, deviceId: settings.deviceId,
+            threadHistory,
+            profileContext,
+            signal: ac.signal,
+          });
       let fullText = '';
       for await (const chunk of iterator) {
         if (isDestroyed()) return;
         fullText += chunk;
         sender.send(CHANNELS.STREAM_CHUNK, chunk);
       }
-      if (!isDestroyed()) sender.send(CHANNELS.STREAM_END);
-      if (payload.threadId) storage.appendMessage(payload.threadId, 'assistant', providers.cleanResponse(fullText));
+      if (!isDestroyed()) {
+        const { text: cleanedText, topic } = memoryManager.extractTopicTag(fullText);
+        const finalText = providers.cleanResponse(cleanedText);
+        sender.send(CHANNELS.STREAM_END, { cleanedText: finalText });
+        if (topic) memoryManager.recordTopic(settings.deviceId, topic);
+        if (payload.threadId) storage.appendMessage(payload.threadId, 'assistant', finalText);
+      }
       storage.incrementDailyRequests();
     } catch (err) {
-      console.error(`[ASK] provider=${settings.provider} error:`, err.message);
-      if (!isDestroyed()) sender.send(CHANNELS.STREAM_ERROR, err.message || 'Failed to get response');
+      const userMsg = mapError(err);
+      console.error(`[ASK] provider=${settings.provider} error:`, err.message || err);
+      if (!isDestroyed()) sender.send(CHANNELS.STREAM_ERROR, userMsg);
     }
   });
 
@@ -617,5 +671,8 @@ app.whenReady().then(() => {
   registerUser();
 });
 
-app.on('window-all-closed', (e) => { e.preventDefault(); });
-app.on('will-quit', () => { globalShortcut.unregisterAll(); });
+app.on('window-all-closed', () => {});
+app.on('will-quit', () => {
+  storage.flushPendingWrites();
+  globalShortcut.unregisterAll();
+});

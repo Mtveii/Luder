@@ -17,12 +17,13 @@ const CHANNELS = {
   GET_THEMES: 'get-themes',   GET_THEME: 'get-theme', SET_THEME: 'set-theme',
   UPDATE_HOTKEY: 'update-hotkey',
   GET_ALL: 'get-all', GET_MODELS: 'get-models',
+  GET_PROFILE_CONTEXT: 'get-profile-context', SET_PROFILE_CONTEXT: 'set-profile-context',
 };
 
 contextBridge.exposeInMainWorld('electronAPI', {
   on: (channel, cb) => ipcRenderer.on(channel, (_e, ...args) => cb(...args)),
   send: (channel, data) => ipcRenderer.send(channel, data),
-  captureRegion: (rect, prompt) => ipcRenderer.send(CHANNELS.CAPTURE_REGION, { rect, prompt }),
+  captureRegion: (rect, prompt, quickHotkey) => ipcRenderer.send(CHANNELS.CAPTURE_REGION, { rect, prompt, quickHotkey: !!quickHotkey }),
   closeOverlay: () => ipcRenderer.send(CHANNELS.CLOSE_OVERLAY),
   closeChat: () => ipcRenderer.send(CHANNELS.CLOSE_CHAT),
   onQuickHotkeyPrompt: (cb) => ipcRenderer.on(CHANNELS.QUICK_HOTKEY_PROMPT, (_e, prompt) => cb(prompt)),
@@ -32,7 +33,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   askQuestion: (payload) => ipcRenderer.send(CHANNELS.ASK_QUESTION, payload),
   onStreamChunk: (cb) => ipcRenderer.on(CHANNELS.STREAM_CHUNK, (_e, chunk) => cb(chunk)),
-  onStreamEnd: (cb) => ipcRenderer.on(CHANNELS.STREAM_END, () => cb()),
+  onStreamEnd: (cb) => ipcRenderer.on(CHANNELS.STREAM_END, (_e, data) => cb(data)),
   onStreamError: (cb) => ipcRenderer.on(CHANNELS.STREAM_ERROR, (_e, msg) => cb(msg)),
 
   getSettings: () => ipcRenderer.invoke(CHANNELS.GET_SETTINGS),
@@ -71,4 +72,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getOsUsername: () => ipcRenderer.invoke(CHANNELS.GET_OS_USERNAME),
   openHome: () => ipcRenderer.send(CHANNELS.OPEN_HOME),
   openExternal: (url) => ipcRenderer.invoke(CHANNELS.OPEN_EXTERNAL, url),
+
+  getProfileContext: (deviceId) => ipcRenderer.invoke(CHANNELS.GET_PROFILE_CONTEXT, deviceId),
+  setProfileContext: (deviceId, content) => ipcRenderer.invoke(CHANNELS.SET_PROFILE_CONTEXT, { deviceId, content }),
 });
