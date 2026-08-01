@@ -1,11 +1,12 @@
 {
   "name": "luder",
-  "version": "0.16.2",
+  "version": "0.16.3",
   "description": "Экранный AI-ассистент: хоткей → выделение области → ответ AI",
   "main": "main.js",
+  "author": "Luder",
   "scripts": {
     "start": "electron .",
-    "prebuild": "rimraf dist",
+    "prebuild": "rimraf dist && node scripts/patch-nsis.js",
     "build": "electron-builder --win --x64",
     "build:linux": "electron-builder --linux",
     "postbuild": "node scripts/verify-build.js",
