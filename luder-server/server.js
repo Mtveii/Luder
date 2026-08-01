@@ -41,6 +41,7 @@ function getLatestRelease() {
     const files = fs.readdirSync(distDir);
     const patterns = [
       /^Luder-(\d+\.\d+\.\d+)\.AppImage$/,
+      /^Luder-Setup-(\d+\.\d+\.\d+)-x64\.exe$/,
       /^Luder Setup (\d+\.\d+\.\d+)\.exe$/,
       /^luder_(\d+\.\d+\.\d+)_amd64\.snap$/,
     ];
@@ -189,7 +190,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   if ((req.method === 'GET' || req.method === 'HEAD') && url === '/luder.exe') {
-    return serveFile(res, path.join(__dirname, 'dist', 'Luder Setup.exe'), 'Luder Setup.exe', req.method);
+    const release = getReleaseManifest();
+    let file = release?.builds?.['win32-x64']?.url?.replace(/^\/download\//, '');
+    if (!file) {
+      const r = getLatestRelease();
+      if (r && r.file.endsWith('.exe')) file = r.file;
+    }
+    if (!file) return json(res, 404, { error: 'no windows build' });
+    return serveFile(res, path.join(__dirname, 'dist', file), file, req.method);
   }
 
   if (req.method === 'POST' && url === '/register') {
