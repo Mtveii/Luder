@@ -1,21 +1,42 @@
 {
   "name": "luder",
-  "version": "0.11.6",
+  "version": "0.16.1",
   "description": "Экранный AI-ассистент: хоткей → выделение области → ответ AI",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder"
+    "prebuild": "rimraf dist",
+    "build": "electron-builder --win --x64",
+    "build:linux": "electron-builder --linux",
+    "postbuild": "node scripts/verify-build.js",
+    "test": "node test/run-all.js",
+    "deploy": "cp dist/Luder-*.AppImage ../luder-server/dist/ 2>/dev/null; cp dist/luder_*.snap ../luder-server/dist/ 2>/dev/null; echo 'deployed'"
   },
   "build": {
     "appId": "com.luder.app",
     "productName": "Luder",
-    "win": { "target": "nsis", "icon": "assets/icon.png" },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Luder",
+      "uninstallDisplayName": "Luder AI Assistant",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "${productName}-Setup-${version}-${arch}.exe"
+    },
     "files": ["**/*", "!build${/*}"]
   },
   "devDependencies": {
     "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "rimraf": "^5.0.0"
   },
   "dependencies": {}
 }

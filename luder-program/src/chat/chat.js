@@ -42,7 +42,6 @@ function startAsk(promptText, imageBase64) {
   isLoading = true;
   lastUserPrompt = promptText;
   const userImage = imageBase64 || (pendingImage ? currentImageBase64 : null);
-  const persistUser = thread.length > 0;
   renderMessage('user', promptText, userImage);
   thread.push({ role: 'user', text: promptText });
   assistantDiv = renderMessage('assistant', '');
@@ -51,18 +50,27 @@ function startAsk(promptText, imageBase64) {
     userImageBase64: userImage,
     prompt: promptText,
     threadHistory: thread.slice(0, -1),
-    persistUser,
+    persistUser: true,
     threadId: currentThreadId,
   });
   pendingImage = false;
   attachmentStatusEl.textContent = '';
 }
 
-window.electronAPI.onRegionCaptured(({ imageBase64, prompt, threadId, attach }) => {
+window.electronAPI.onRegionCaptured(({ imageBase64, prompt, threadId, thread: loadedThread, attach }) => {
   currentImageBase64 = imageBase64;
   currentThreadId = threadId;
   titleEl.textContent = (prompt || 'Analyze this image').slice(0, 60);
   if (attach) { pendingImage = true; attachmentStatusEl.textContent = 'Image attached — add a question and send.'; return; }
+  if (loadedThread && loadedThread.messages && loadedThread.messages.length > 0) {
+    messagesEl.innerHTML = '';
+    thread.length = 0;
+    for (const m of loadedThread.messages) {
+      renderMessage(m.role, m.text, m.imageBase64);
+      thread.push({ role: m.role, text: m.text });
+      if (m.imageBase64) currentImageBase64 = m.imageBase64;
+    }
+  }
   startAsk(prompt || 'Analyze this image.', imageBase64);
 });
 

@@ -53,6 +53,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUpdateAvailable: (cb) => ipcRenderer.on(CHANNELS.UPDATE_AVAILABLE, (_e, info) => cb(info)),
   downloadUpdate: (url) => ipcRenderer.invoke(CHANNELS.DOWNLOAD_UPDATE, { url }),
 
+  onDownloadProgress: (cb) => ipcRenderer.on('download-progress', (_e, data) => cb(data)),
+  onUpdateDownloaded: (cb) => ipcRenderer.on('update-downloaded', (_e, data) => cb(data)),
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdateManifest: (manifest) => ipcRenderer.invoke('update:download', manifest),
+  installUpdate: (installerPath) => ipcRenderer.invoke('update:install', installerPath),
+
   togglePinChat: (pinned) => ipcRenderer.send(CHANNELS.TOGGLE_PIN_CHAT, pinned),
   captureAndAttach: (threadId) => ipcRenderer.send(CHANNELS.CAPTURE_AND_ATTACH, { threadId }),
   attachFile: () => ipcRenderer.invoke(CHANNELS.ATTACH_FILE),
@@ -75,4 +81,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getProfileContext: (deviceId) => ipcRenderer.invoke(CHANNELS.GET_PROFILE_CONTEXT, deviceId),
   setProfileContext: (deviceId, content) => ipcRenderer.invoke(CHANNELS.SET_PROFILE_CONTEXT, { deviceId, content }),
+});
+
+contextBridge.exposeInMainWorld('updaterAPI', {
+  onAvailable: (cb) => ipcRenderer.on('update-available', (_e, data) => cb(data)),
+  onProgress: (cb) => ipcRenderer.on('download-progress', (_e, data) => cb(data)),
+  onDownloaded: (cb) => ipcRenderer.on('update-downloaded', (_e, data) => cb(data)),
+  download: (manifest) => ipcRenderer.invoke('update:download', manifest),
+  install: (installerPath) => ipcRenderer.invoke('update:install', installerPath),
 });

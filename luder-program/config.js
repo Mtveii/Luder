@@ -1,3 +1,3 @@
 module.exports = {
-  SERVER_URL: process.env.LUDR_SERVER_URL || 'http://100.102.160.84:3000',
+  SERVER_URL: process.env.SERVER_URL || process.env.LUDR_SERVER_URL || 'https://aspire-5.tailc87500.ts.net',
 };

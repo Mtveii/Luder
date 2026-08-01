@@ -432,11 +432,17 @@ function createThread({ title, provider, imageBase64 }) {
     updatedAt: Date.now(),
     provider,
     favorite: false,
-    messages: [{ role: 'user', text: title, imageBase64: imageBase64 || null, ts: Date.now() }],
+    messages: [],
   };
   settings.threads.unshift(thread);
   writeSettings(settings);
   return thread;
+}
+
+function getLastThread() {
+  const threads = (readSettings().threads || []).filter(t => t.messages && t.messages.length > 0);
+  if (threads.length === 0) return null;
+  return threads.reduce((a, b) => a.updatedAt > b.updatedAt ? a : b);
 }
 
 let _appendTimer = null;
@@ -539,19 +545,14 @@ function setHotkey(combo) {
 }
 
 // --- Tier & daily limits ---
-const PRIVILEGED_PROFILE_NAMES = new Set(['lovepolinka@love', 'admin123@luder']);
 const TIER_LIMITS = { free: 20, max: Infinity };
 
 function getTier() {
-  const name = readSettings().profile?.displayName?.trim().toLowerCase();
-  return PRIVILEGED_PROFILE_NAMES.has(name) ? 'max' : 'free';
+  return 'free';
 }
 
 function setTier(tier) {
-  const settings = readSettings();
-  settings.tier = 'free';
-  writeSettings(settings);
-  return getTier();
+  return 'free';
 }
 
 function checkDailyLimit() {
@@ -594,7 +595,7 @@ function forceReloadSettings() {
 
 module.exports = {
   readSettings, writeSettings, getStoragePath, forceReloadSettings,
-  createThread, appendMessage, getThread, toggleFavorite, deleteThread, clearHistory, listThreads,
+  createThread, getLastThread, appendMessage, getThread, toggleFavorite, deleteThread, clearHistory, listThreads,
   getStats, listQuickHotkeys, setQuickHotkeys,
   getThemes, getTheme, setTheme, getHotkey, setHotkey,
   getTier, setTier, checkDailyLimit, incrementDailyRequests, getDailyUsage, TIER_LIMITS,

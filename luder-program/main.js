@@ -69,6 +69,12 @@ const CHANNELS = {
   UPDATE_AVAILABLE: 'update-available',
   DOWNLOAD_UPDATE: 'download-update',
 
+  UPDATE_CHECK: 'update:check',
+  UPDATE_DOWNLOAD: 'update:download',
+  UPDATE_INSTALL: 'update:install',
+  DOWNLOAD_PROGRESS: 'download-progress',
+  UPDATE_DOWNLOADED: 'update-downloaded',
+
   TOGGLE_PIN_CHAT: 'toggle-pin-chat',
   CAPTURE_AND_ATTACH: 'capture-and-attach',
   ATTACH_FILE: 'attach-file',
@@ -96,6 +102,10 @@ let overlayWindows = new Map(); // displayIndex → BrowserWindow
 let selection = { dragging: false, start: { x: 0, y: 0 }, current: { x: 0, y: 0 } };
 
 const dynamicQuickHotkeys = [];
+
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+let lastSessionThreadId = null;
+let lastSessionCloseTime = 0;
 
 // --- User registration on server ---
 async function registerUser() {
@@ -127,7 +137,12 @@ function registerMainHotkey(combo) {
   }
   if (!combo || combo.trim() === '') return true;
   try {
-    const success = globalShortcut.register(combo, () => { if (overlayWindows.size === 0) createOverlayWindows(); });
+    const success = globalShortcut.register(combo, () => {
+      if (overlayWindows.size === 0) {
+        if (tryResumeChat()) return;
+        createOverlayWindows();
+      }
+    });
     if (success) {
       currentMainHotkey = combo;
       console.log(`[HOTKEY] Registered: ${combo}`);
@@ -229,6 +244,24 @@ async function createOverlayWindows(promptPreset = '') {
   }
 }
 
+function tryResumeChat() {
+  if (chatWindow && !chatWindow.isDestroyed()) {
+    chatWindow.show();
+    chatWindow.restore();
+    chatWindow.focus();
+    return true;
+  }
+  if (!lastSessionThreadId) return false;
+  if (Date.now() - lastSessionCloseTime > SESSION_TIMEOUT_MS) {
+    lastSessionThreadId = null;
+    return false;
+  }
+  const thread = storage.getThread(lastSessionThreadId);
+  if (!thread) { lastSessionThreadId = null; return false; }
+  createChatWindow({ thread });
+  return true;
+}
+
 function createChatWindow({ imageBase64 = null, prompt = null, threadId = null, thread = null } = {}) {
   // Close existing chat window first
   if (chatWindow && !chatWindow.isDestroyed()) {
@@ -241,11 +274,20 @@ function createChatWindow({ imageBase64 = null, prompt = null, threadId = null, 
   });
   chatWindow.loadFile(path.join(__dirname, 'src/chat/chat.html'));
   chatWindow.webContents.once('did-finish-load', () => {
-    if (thread) chatWindow.webContents.send(CHANNELS.THREAD_LOADED, thread);
-    else chatWindow.webContents.send(CHANNELS.REGION_CAPTURED, { imageBase64, prompt, threadId });
+    if (thread && !imageBase64) {
+      chatWindow.webContents.send(CHANNELS.THREAD_LOADED, thread);
+    } else {
+      chatWindow.webContents.send(CHANNELS.REGION_CAPTURED, { imageBase64, prompt, threadId, thread });
+    }
   });
   const win = chatWindow;
-  win.on('closed', () => { if (chatWindow === win) chatWindow = null; });
+  win.on('closed', () => {
+    if (chatWindow === win) chatWindow = null;
+    if (threadId) {
+      lastSessionThreadId = threadId;
+      lastSessionCloseTime = Date.now();
+    }
+  });
 }
 
 function createHomeWindow() {
@@ -377,12 +419,21 @@ function compositeImages(pieces, width, height) {
   });
 }
 
-async function checkAndNotifyUpdate(forced) {
-  const result = await updater.checkForUpdates(app.getVersion());
-  const settings = storage.readSettings();
-  if (result.hasUpdate && (forced || settings.updateInfo.dismissedVersion !== result.latestVersion)) {
-    if (homeWindow) homeWindow.webContents.send(CHANNELS.UPDATE_AVAILABLE, result);
-    else if (tray) tray.displayBalloon({ title: 'Update available', content: `New version ${result.latestVersion}` });
+async function runUpdateCheck(mainWindow) {
+  try {
+    const manifest = await updater.checkForUpdate();
+    updater.logUpdate('check_ok', { current: app.getVersion(), remote: manifest ? manifest.version : null });
+    if (manifest && manifest.hasUpdate) {
+      const win = mainWindow || homeWindow;
+      if (win && !win.isDestroyed()) {
+        win.webContents.send(CHANNELS.UPDATE_AVAILABLE, manifest);
+      }
+    }
+    return manifest || { hasUpdate: false };
+  } catch (err) {
+    updater.logUpdate('check_fail', { error: err.message });
+    console.error('[UPDATER] Check failed:', err.message);
+    return { hasUpdate: false, error: err.message };
   }
 }
 
@@ -406,13 +457,25 @@ app.whenReady().then(() => {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Home', click: createHomeWindow },
     { type: 'separator' },
-    { label: 'Check for updates', click: () => checkAndNotifyUpdate(true) },
+    { label: 'Check for updates', click: () => runUpdateCheck(homeWindow) },
     { label: 'Quit', click: () => app.quit() },
   ]));
   tray.setToolTip('Ludr Clone');
   tray.on('click', createHomeWindow);
 
   createHomeWindow();
+
+  // --- Post-install log: after update, log successful launch ---
+  try {
+    const log = updater.getUpdateLog();
+    if (log.includes('install_start') && !log.includes('launch_ok')) {
+      updater.logUpdate('launch_ok', { version: app.getVersion() });
+    }
+  } catch (_) {}
+
+  // --- Periodic update check: 5s delay, then every 6 hours ---
+  setTimeout(() => runUpdateCheck(homeWindow), 5000);
+  setInterval(() => runUpdateCheck(homeWindow), 6 * 60 * 60 * 1000);
 
   // --- IPC handlers ---
 
@@ -432,14 +495,12 @@ app.whenReady().then(() => {
 
       const finalPrompt = prompt || 'Analyze this image.';
       const settings = storage.readSettings();
-      const threadId = chatManager.getOrCreateThread({
+      const { threadId, thread } = chatManager.getOrResumeThread({
         title: finalPrompt,
         provider: settings.provider,
         imageBase64,
-        isQuickHotkey: !!quickHotkey,
-        hotkeyPrompt: quickHotkey ? prompt : null,
       });
-      createChatWindow({ imageBase64, prompt: finalPrompt, threadId });
+      createChatWindow({ imageBase64, prompt: finalPrompt, threadId, thread });
     } catch (err) {
       console.error('Capture error:', err);
       closeAllOverlays();
@@ -586,7 +647,24 @@ app.whenReady().then(() => {
 
   ipcMain.handle(CHANNELS.GET_MODELS, async (_e, provider) => getModels(provider));
 
-  ipcMain.handle(CHANNELS.CHECK_FOR_UPDATES, async () => updater.checkForUpdates(app.getVersion()));
+  ipcMain.handle(CHANNELS.CHECK_FOR_UPDATES, async () => {
+    const manifest = await updater.checkForUpdate();
+    if (manifest && manifest.hasUpdate) {
+      return { hasUpdate: true, latestVersion: manifest.version, releaseNotes: manifest.releaseNotes, source: 'server' };
+    }
+    return { hasUpdate: false, source: 'server' };
+  });
+
+  ipcMain.handle(CHANNELS.UPDATE_CHECK, async () => runUpdateCheck(homeWindow));
+
+  ipcMain.handle(CHANNELS.UPDATE_DOWNLOAD, async (_e, manifest) => {
+    const installerPath = await updater.downloadUpdate(manifest, homeWindow);
+    return { path: installerPath };
+  });
+
+  ipcMain.handle(CHANNELS.UPDATE_INSTALL, async (_e, installerPath) => {
+    updater.quitAndInstall(installerPath);
+  });
 
   ipcMain.handle('download-update', async (_e, { url }) => {
     if (!url) throw new Error('No download URL');
@@ -667,12 +745,14 @@ app.whenReady().then(() => {
   });
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createHomeWindow(); });
-  checkAndNotifyUpdate(false);
   registerUser();
 });
 
-app.on('window-all-closed', () => {});
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
 app.on('will-quit', () => {
   storage.flushPendingWrites();
   globalShortcut.unregisterAll();
+  console.log('[QUIT] Clean shutdown OK');
 });

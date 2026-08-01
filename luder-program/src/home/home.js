@@ -404,45 +404,100 @@ document.getElementById('save').addEventListener('click', async () => {
   setTimeout(() => { statusEl.textContent = ''; }, 3000);
 });
 
-function createDownloadButton(label, url, container, opts = {}) {
-  const btn = document.createElement('button');
-  btn.textContent = label;
-  btn.style.cssText = opts.style || 'margin-left:12px;padding:4px 16px;border-radius:8px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-weight:600;';
-  btn.addEventListener('click', async () => {
-    btn.textContent = 'Загрузка...';
-    btn.disabled = true;
-    try {
-      await window.electronAPI.downloadUpdate(url);
-    } catch (err) {
-      btn.textContent = opts.retryLabel || 'Ошибка';
-      if (opts.retryMs) setTimeout(() => { btn.textContent = label; btn.disabled = false; }, opts.retryMs);
-    }
-  });
-  container.appendChild(btn);
-}
+let pendingUpdateManifest = null;
 
 document.getElementById('check-update').addEventListener('click', async () => {
   statusEl.textContent = 'Проверка...';
   try {
-    const result = await window.electronAPI.checkForUpdates();
-    if (result.error) statusEl.textContent = `Не удалось проверить обновления: ${result.error}`;
-    else if (result.hasUpdate) {
-      statusEl.textContent = `Доступна версия ${result.latestVersion}. `;
-      createDownloadButton('Обновить сейчас', result.url, statusEl, {
-        style: 'padding:4px 12px;border-radius:6px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-weight:600;margin-left:4px;',
-      });
-    } else statusEl.textContent = 'У вас последняя версия';
+    const result = await window.electronAPI.checkForUpdate();
+    if (result.hasUpdate) {
+      statusEl.textContent = `Доступна версия ${result.version}.`;
+    } else {
+      statusEl.textContent = 'У вас последняя версия';
+    }
   } catch (err) {
     statusEl.textContent = `Ошибка: ${err.message}`;
   }
 });
 
-// --- Обновление баннера ---
-window.electronAPI.onUpdateAvailable((info) => {
+// --- Update banner ---
+function clearBanner() {
+  updateBanner.innerHTML = '';
+  updateBanner.classList.add('hidden');
+}
+
+function showUpdateBanner(info) {
+  pendingUpdateManifest = info;
   updateBanner.classList.remove('hidden');
   updateBanner.style.animation = 'fadeSlideIn 0.4s ease';
-  updateBanner.textContent = `Доступна новая версия ${info.latestVersion}.`;
-  if (info.url) createDownloadButton('Обновить', info.url, updateBanner, { retryMs: 2000 });
+  updateBanner.innerHTML = '';
+
+  const msg = document.createElement('span');
+  msg.textContent = `Доступна новая версия ${info.version}. `;
+  updateBanner.appendChild(msg);
+
+  const updateBtn = document.createElement('button');
+  updateBtn.textContent = 'Обновить';
+  updateBtn.style.cssText = 'margin-left:8px;padding:4px 16px;border-radius:8px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-weight:600;';
+  updateBtn.addEventListener('click', async () => {
+    updateBtn.textContent = 'Загрузка...';
+    updateBtn.disabled = true;
+    try {
+      await window.electronAPI.downloadUpdateManifest(info);
+    } catch (err) {
+      updateBtn.textContent = 'Ошибка';
+      setTimeout(() => { updateBtn.textContent = 'Обновить'; updateBtn.disabled = false; }, 2000);
+    }
+  });
+  updateBanner.appendChild(updateBtn);
+
+  if (!info.mandatory) {
+    const laterBtn = document.createElement('button');
+    laterBtn.textContent = 'Позже';
+    laterBtn.style.cssText = 'margin-left:4px;padding:4px 12px;border-radius:6px;border:none;background:var(--surface);color:var(--text);cursor:pointer;';
+    laterBtn.addEventListener('click', () => clearBanner());
+    updateBanner.appendChild(laterBtn);
+  }
+}
+
+window.electronAPI.onUpdateAvailable((info) => showUpdateBanner(info));
+
+window.electronAPI.onDownloadProgress((data) => {
+  let bar = updateBanner.querySelector('.update-progress');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.className = 'update-progress';
+    bar.style.cssText = 'height:4px;background:var(--primary);border-radius:4px;margin-top:6px;transition:width 0.3s ease;';
+    updateBanner.appendChild(bar);
+  }
+  bar.style.width = `${data.percent}%`;
+});
+
+window.electronAPI.onUpdateDownloaded((data) => {
+  pendingUpdateManifest = null;
+  updateBanner.innerHTML = '';
+  updateBanner.classList.remove('hidden');
+
+  const msg = document.createElement('span');
+  msg.textContent = 'Обновление загружено. ';
+  updateBanner.appendChild(msg);
+
+  const installBtn = document.createElement('button');
+  installBtn.textContent = 'Установить сейчас';
+  installBtn.style.cssText = 'margin-left:8px;padding:4px 16px;border-radius:8px;border:none;background:var(--primary);color:#fff;cursor:pointer;font-weight:600;';
+  installBtn.addEventListener('click', () => {
+    window.electronAPI.installUpdate(data.path);
+  });
+  updateBanner.appendChild(installBtn);
+
+  const showLater = !pendingUpdateManifest?.mandatory;
+  if (showLater) {
+    const laterBtn = document.createElement('button');
+    laterBtn.textContent = 'Позже';
+    laterBtn.style.cssText = 'margin-left:4px;padding:4px 12px;border-radius:6px;border:none;background:var(--surface);color:var(--text);cursor:pointer;';
+    laterBtn.addEventListener('click', () => clearBanner());
+    updateBanner.appendChild(laterBtn);
+  }
 });
 
 // --- INIT: один IPC call ---
