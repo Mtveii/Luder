@@ -309,6 +309,8 @@ function renderSettings(settings) {
   hotkeyEl.value = settings.hotkey || 'Ctrl+Alt+Space';
   alwaysOnTopEl.checked = !!settings.settings?.alwaysOnTopChat;
   voiceInputEl.checked = settings.settings?.voiceInput !== false;
+  autoStartEl.checked = settings.settings?.autoStart === true || (window.electronAPI.getAutoStart ? null : false);
+  window.electronAPI.getAutoStart().then((v) => { if (typeof v === 'boolean') autoStartEl.checked = v; }).catch(() => {});
 }
 
 providerEl.addEventListener('change', async () => {
@@ -389,7 +391,7 @@ document.getElementById('save').addEventListener('click', async () => {
     model: modelEl.value,
     apiKeys,
     hotkey: hotkeyEl.value || 'Ctrl+Alt+Space',
-    settings: { ...cached.settings.settings, alwaysOnTopChat: alwaysOnTopEl.checked, voiceInput: voiceInputEl.checked },
+    settings: { ...cached.settings.settings, alwaysOnTopChat: alwaysOnTopEl.checked, voiceInput: voiceInputEl.checked, autoStart: autoStartEl.checked },
   };
   const result = await window.electronAPI.updateHotkey(hotkeyEl.value || 'Ctrl+Alt+Space');
   if (!result?.registered) {

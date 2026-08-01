@@ -81,6 +81,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getProfileContext: (deviceId) => ipcRenderer.invoke(CHANNELS.GET_PROFILE_CONTEXT, deviceId),
   setProfileContext: (deviceId, content) => ipcRenderer.invoke(CHANNELS.SET_PROFILE_CONTEXT, { deviceId, content }),
+
+  setAutoStart: (enabled) => ipcRenderer.invoke('set-auto-start', enabled),
+  getAutoStart: () => ipcRenderer.invoke('get-auto-start'),
 });
 
 contextBridge.exposeInMainWorld('updaterAPI', {

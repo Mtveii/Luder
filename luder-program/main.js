@@ -290,15 +290,35 @@ function createChatWindow({ imageBase64 = null, prompt = null, threadId = null, 
   });
 }
 
+function applyAutoStart(enabled) {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: !!enabled,
+      openAsHidden: true,
+      path: process.execPath,
+    });
+  } catch (_) {}
+}
+
+function isAutoStartEnabled() {
+  try {
+    return app.getLoginItemSettings().openAtLogin;
+  } catch (_) {
+    return false;
+  }
+}
+
 function createHomeWindow() {
   if (homeWindow && !homeWindow.isDestroyed()) {
     homeWindow.show();
     homeWindow.restore();
     homeWindow.focus();
+    runUpdateCheck(homeWindow);
     return;
   }
   homeWindow = new BrowserWindow({ width: 900, height: 640, icon: path.join(__dirname, 'assets/icon.png'), webPreferences: windowDefaults() });
   homeWindow.loadFile(path.join(__dirname, 'src/home/home.html'));
+  homeWindow.webContents.once('did-finish-load', () => runUpdateCheck(homeWindow));
   homeWindow.on('closed', () => { homeWindow = null; });
 }
 
@@ -472,6 +492,9 @@ app.whenReady().then(() => {
       updater.logUpdate('launch_ok', { version: app.getVersion() });
     }
   } catch (_) {}
+
+  // --- Auto-start on PC boot (from settings) ---
+  applyAutoStart(settings.settings?.autoStart === true);
 
   // --- Periodic update check: 5s delay, then every 6 hours ---
   setTimeout(() => runUpdateCheck(homeWindow), 5000);
@@ -665,6 +688,12 @@ app.whenReady().then(() => {
   ipcMain.handle(CHANNELS.UPDATE_INSTALL, async (_e, installerPath) => {
     updater.quitAndInstall(installerPath);
   });
+
+  ipcMain.handle('set-auto-start', async (_e, enabled) => {
+    applyAutoStart(enabled);
+    return isAutoStartEnabled();
+  });
+  ipcMain.handle('get-auto-start', async () => isAutoStartEnabled());
 
   ipcMain.handle('download-update', async (_e, { url }) => {
     if (!url) throw new Error('No download URL');
