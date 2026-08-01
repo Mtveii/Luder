@@ -1,6 +1,6 @@
 {
   "name": "ludr-server",
-  "version": "0.16.3",
+  "version": "0.16.4",
   "description": "Ludr: лендинг, AI-прокси с подписками, регистрация",
   "main": "server.js",
   "scripts": {

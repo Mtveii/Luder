@@ -1,16 +1,16 @@
 {
-  "version": "0.16.3",
+  "version": "0.16.4",
   "minSupportedVersion": "0.10.0",
   "mandatory": false,
   "releaseNotes": "Auto-update system implemented",
   "builds": {
     "linux-x64": {
-      "url": "/download/Luder-0.16.3.AppImage",
-      "sha256": "2ea6615ac15ddba95c210b70907e403caf7ee39dbb63f3738ec23cac7b48f4d3"
+      "url": "/download/Luder-0.16.4.AppImage",
+      "sha256": "ff33df747a5f148410a466da5b2b4c6400e51f415050e93a06fe22995e8bccf6"
     },
     "win32-x64": {
-      "url": "/download/Luder-Setup-0.16.3-x64.exe",
-      "sha256": "7fce988d924f01cde0908c14ef29dee6e6e158710d13821d9d4efc5a2b91477f"
+      "url": "/download/Luder-Setup-0.16.4-x64.exe",
+      "sha256": "4a04afa7e227df9abd9457e6deaa5cba84e8046b980e9745dbd4499fe4f6074d"
     }
   }
 }
