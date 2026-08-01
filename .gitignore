@@ -5,3 +5,4 @@ dist/
 .env.local
 luder-server/data.db*
 luder-server/config/release.json.bak
+AGENTS.md
