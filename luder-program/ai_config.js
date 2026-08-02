@@ -88,6 +88,8 @@ const KEY_HINTS = {
   together: '_from api.together.xyz/settings_',
   fireworks: '_starts with fw_ (fireworks.ai)',
   sambanova: '_from cloud.sambanova.ai_',
+  deepseek: '_from platform.deepseek.com_',
+  cerebras: '_from cloud.cerebras.ai_',
 };
 
 const SYSTEM_PROMPT = `Ты — Luder, ИИ-ассистент для анализа скриншотов экрана.

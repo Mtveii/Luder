@@ -3,8 +3,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { SERVER_URL } = require('../../config');
 
-const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
 const CHECK_INTERVAL = 6 * 60 * 60 * 1000;
 
 function compareVersions(a, b) {
@@ -114,7 +114,7 @@ function verifyChecksum(filePath, expectedSha256) {
 }
 
 function quitAndInstall(installerPath) {
-  logUpdate('install_start', { path: installerPath });
+  logUpdate('install_start', { version: app ? app.getVersion() : '' });
   const child = spawn(installerPath, process.platform === 'win32' ? ['/S'] : [], {
     detached: true,
     stdio: 'ignore',

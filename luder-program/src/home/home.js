@@ -16,6 +16,7 @@ const apiKeyEl = document.getElementById('apiKey');
 const hotkeyEl = document.getElementById('hotkey');
 const alwaysOnTopEl = document.getElementById('alwaysOnTop');
 const voiceInputEl = document.getElementById('voiceInput');
+const autoStartEl = document.getElementById('autoStart');
 const statusEl = document.getElementById('status');
 const themeStatus = document.getElementById('theme-status');
 
@@ -413,7 +414,7 @@ document.getElementById('check-update').addEventListener('click', async () => {
   try {
     const result = await window.electronAPI.checkForUpdate();
     if (result.hasUpdate) {
-      statusEl.textContent = `Доступна версия ${result.version}.`;
+      statusEl.textContent = `Доступна версия ${result.latestVersion}.`;
     } else {
       statusEl.textContent = 'У вас последняя версия';
     }

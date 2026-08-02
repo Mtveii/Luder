@@ -101,17 +101,25 @@ function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
-    req.on('data', (c) => {
+    let rejected = false;
+    const onData = (c) => {
+      if (rejected) return;
       size += c.length;
-      if (size > 16384) { req.resume(); reject(new Error('body too large')); return; }
+      if (size > 16384) {
+        rejected = true;
+        req.removeListener('data', onData);
+        reject(new Error('body too large'));
+        return;
+      }
       chunks.push(c);
-    });
-    req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString())); } catch { resolve(null); } });
+    };
+    req.on('data', onData);
+    req.on('end', () => { if (!rejected) { try { resolve(JSON.parse(Buffer.concat(chunks).toString())); } catch { resolve(null); } } });
     req.on('error', reject);
   });
 }
 
-function safe(v) { return typeof v === 'string' ? v.slice(0, 100) : null; }
+function safe(v) { return typeof v === 'string' ? v.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50) : null; }
 
 function serveFile(res, filepath, filename, method = 'GET') {
   if (!fs.existsSync(filepath)) return json(res, 404, { error: 'not found' });
@@ -192,6 +200,7 @@ const server = http.createServer(async (req, res) => {
   if ((req.method === 'GET' || req.method === 'HEAD') && url === '/luder.exe') {
     const release = getReleaseManifest();
     let file = release?.builds?.['win32-x64']?.url?.replace(/^\/download\//, '');
+    if (file) file = decodeURIComponent(file);
     if (!file) {
       const r = getLatestRelease();
       if (r && r.file.endsWith('.exe')) file = r.file;
@@ -208,7 +217,8 @@ const server = http.createServer(async (req, res) => {
     if (!body?.id || typeof body.id !== 'string' || body.id.length > 100) return json(res, 400, { error: 'invalid id' });
     const now = Date.now();
     const existing = stmtGet.get(body.id);
-    stmtUpsert.run(body.id, 'free', safe(body.provider), now, now);
+    const registeredAt = existing?.registeredAt || now;
+    stmtUpsert.run(body.id, 'free', safe(body.provider), registeredAt, now);
     return json(res, 200, { ok: true, tier: existing?.tier || 'free' });
   }
 

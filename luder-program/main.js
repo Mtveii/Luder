@@ -156,7 +156,7 @@ function registerMainHotkey(combo) {
   if (previous) {
     try {
       if (globalShortcut.register(previous, () => { if (overlayWindows.size === 0) createOverlayWindows(); })) currentMainHotkey = previous;
-    } catch (_) {}
+    } catch (err) { console.error(`[HOTKEY] Failed to re-register ${previous}:`, err.message); }
   }
   return false;
 }
@@ -296,8 +296,9 @@ function applyAutoStart(enabled) {
       openAtLogin: !!enabled,
       openAsHidden: true,
       path: process.execPath,
+      args: ['--hidden'],
     });
-  } catch (_) {}
+  } catch (err) { console.error('[AUTOSTART] Failed to apply:', err.message); }
 }
 
 function isAutoStartEnabled() {
@@ -483,7 +484,9 @@ app.whenReady().then(() => {
   tray.setToolTip('Ludr Clone');
   tray.on('click', createHomeWindow);
 
-  createHomeWindow();
+  const isAutoStartLaunch = process.argv.some((a) => a === '--hidden' || a === '--minimized');
+  if (!isAutoStartLaunch) createHomeWindow();
+  else if (tray) tray.displayBalloon && tray.displayBalloon({ title: 'Luder', content: 'Работает в фоне. Нажмите на значок в трее, чтобы открыть.' });
 
   // --- Post-install log: after update, log successful launch ---
   try {
@@ -697,9 +700,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('download-update', async (_e, { url }) => {
     if (!url) throw new Error('No download URL');
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
-    const execAsync = promisify(exec);
+    const { spawn } = require('child_process');
     const tmpPath = path.join(app.getPath('temp'), 'luder-update.exe');
 
     // Download
@@ -709,8 +710,9 @@ app.whenReady().then(() => {
     fs.writeFileSync(tmpPath, buffer);
 
     // Launch installer and quit
-    execAsync(`"${tmpPath}" /S`);
-    setTimeout(() => app.quit(), 1000);
+    const child = spawn(tmpPath, ['/S'], { detached: true, stdio: 'ignore' });
+    child.unref();
+    app.quit();
     return { ok: true };
   });
   ipcMain.handle(CHANNELS.GET_OS_USERNAME, async () => os.userInfo().username);
