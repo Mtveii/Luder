@@ -23,6 +23,27 @@ function imageMimeType(imageBase64) {
   return bytes[0] === 0xff && bytes[1] === 0xd8 ? 'image/jpeg' : 'image/png';
 }
 
+// --- Ретрай на временные сбои (429/5xx/сеть): backoff 1s, 2s ---
+async function fetchWithRetry(url, options, retries = 2) {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (attempt < retries && (res.status === 429 || res.status >= 500)) {
+        lastErr = new Error(`HTTP ${res.status}`);
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      if (err.name === 'AbortError') throw err;
+      lastErr = err;
+      if (attempt < retries) await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 function historyMessages(history, format = 'openai') {
   return (Array.isArray(history) ? history : [])
     .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.text === 'string')
@@ -79,7 +100,7 @@ async function* askGemini(imageBase64, promptText, config) {
   console.log('[GEMINI] Model:', model, 'Key length:', key.length);
 
   const extendedPrompt = SYSTEM_PROMPT + (config.profileContext || '');
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${key}`, {
+  const res = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${key}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     signal: config.signal,
@@ -117,7 +138,7 @@ async function* askAnthropic(imageBase64, promptText, config) {
   const mimeType = imageMimeType(image);
 
   const extendedPrompt = SYSTEM_PROMPT + (config.profileContext || '');
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
     signal: config.signal,
@@ -163,7 +184,7 @@ async function* askOpenAICompatible(imageBase64, promptText, config, { baseUrl, 
 
   console.log(`[${providerName.toUpperCase()}] Model:`, model, 'Key length:', key.length);
 
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+  const res = await fetchWithRetry(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
     signal: config.signal,
@@ -183,7 +204,7 @@ async function* askOpenAICompatible(imageBase64, promptText, config, { baseUrl, 
     const slugMatch = msg.match(/use this slug instead:\s*(\S+)/i);
     if (res.status === 404 && slugMatch) {
       const paidModel = slugMatch[1];
-      const retry = await fetch(`${baseUrl}/chat/completions`, {
+      const retry = await fetchWithRetry(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
         signal: config.signal,

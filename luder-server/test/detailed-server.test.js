@@ -273,6 +273,35 @@ async function setup() {
     fs.rmSync(tmp2, { recursive: true, force: true });
   });
 
+  // ---------- AUTH_TOKEN ----------
+  await check('AUTH_TOKEN: /register без токена → 401, с токеном → 200, update/latest открыт', async () => {
+    const tmp3 = fs.mkdtempSync(path.join(os.tmpdir(), 'luder-srv-auth-'));
+    for (const f of ['server.js', 'index.html', 'package.json']) {
+      fs.copyFileSync(path.join(ROOT, f), path.join(tmp3, f));
+    }
+    fs.mkdirSync(path.join(tmp3, 'config'));
+    fs.mkdirSync(path.join(tmp3, 'dist'));
+    fs.copyFileSync(path.join(tmp, 'config', 'release.json'), path.join(tmp3, 'config', 'release.json'));
+    fs.copyFileSync(path.join(tmp, 'dist', 'Luder Setup.exe'), path.join(tmp3, 'dist', 'Luder Setup.exe'));
+    const PORT3 = 3197;
+    const server3 = spawn('node', ['server.js'], { cwd: tmp3, env: { ...process.env, NODE_PATH: path.join(ROOT, 'node_modules'), PORT: String(PORT3), HOST: '127.0.0.1', AUTH_TOKEN: 'secret-token-123' }, stdio: 'ignore' });
+    for (let i = 0; i < 40; i++) {
+      try { await fetch(`http://127.0.0.1:${PORT3}/health`); break; } catch { await new Promise(r => setTimeout(r, 200)); }
+    }
+    const base3 = `http://127.0.0.1:${PORT3}`;
+    const noAuth = await fetch(`${base3}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'u-noauth' }) });
+    assert.strictEqual(noAuth.status, 401, 'без токена → 401');
+    const badToken = await fetch(`${base3}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Luder-Token': 'wrong' }, body: JSON.stringify({ id: 'u-badtoken' }) });
+    assert.strictEqual(badToken.status, 401, 'неверный токен → 401');
+    const good = await fetch(`${base3}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer secret-token-123' }, body: JSON.stringify({ id: 'u-good' }) });
+    assert.strictEqual(good.status, 200, 'с токеном → 200');
+    assert.deepStrictEqual(await good.json(), { ok: true, tier: 'free' });
+    const update = await fetch(`${base3}/api/update/latest?platform=win32&arch=x64&current=0.15.0`);
+    assert.strictEqual(update.status, 200, 'update/latest остаётся открытым (апдейты старых клиентов)');
+    server3.kill('SIGTERM');
+    fs.rmSync(tmp3, { recursive: true, force: true });
+  });
+
   // ---------- несуществующий роут ----------
   await check('несуществующий роут → 404 json', async () => {
     const res = await get('/api/whatever');

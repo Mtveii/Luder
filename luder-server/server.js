@@ -26,6 +26,7 @@ const Database = require('better-sqlite3');
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
+const AUTH_TOKEN = process.env.AUTH_TOKEN || '';
 const TRUST_PROXY = process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true';
 const MAX_DOWNLOADS = Math.max(1, Number(process.env.MAX_DOWNLOADS) || 5);
 const MAX_DOWNLOAD_QUEUE = Math.max(1, Number(process.env.MAX_DOWNLOAD_QUEUE) || 20);
@@ -316,6 +317,13 @@ function readBody(req) {
 
 function safe(v) { return typeof v === 'string' ? v.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50) : null; }
 
+// --- Auth: если задан AUTH_TOKEN, записывающие эндпоинты требуют Bearer-токен ---
+function authorized(req) {
+  if (!AUTH_TOKEN) return true;
+  const header = req.headers['authorization'] || req.headers['x-luder-token'] || '';
+  return header.replace(/^Bearer\s+/i, '') === AUTH_TOKEN;
+}
+
 // --- HTTP(S) ---
 const handler = async (req, res) => {
   try {
@@ -391,6 +399,7 @@ const handler = async (req, res) => {
     }
 
     if (req.method === 'POST' && url === '/register') {
+      if (!authorized(req)) return sendJson(req, res, 401, { error: 'unauthorized' });
       const ip = clientIp(req);
       if (!checkRateLimit(ip, REGISTER_LIMIT)) return sendJson(req, res, 429, { error: 'too many requests' });
       let body;

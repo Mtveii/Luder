@@ -13,7 +13,33 @@ const memoryManager = require('./src/shared/memory_manager');
 const chatManager = require('./src/shared/chat_manager');
 const storage = require('./src/shared/storage');
 const updater = require('./src/shared/updater');
-const { SERVER_URL } = require('./config');
+const { SERVER_URL, API_TOKEN } = require('./config');
+
+// --- Лог ошибок клиента (userData/ludr-error.log, ротация 1 МБ) ---
+const ERROR_LOG_MAX_BYTES = 1024 * 1024;
+function writeErrorLog(level, msg) {
+  try {
+    const logPath = path.join(app.getPath('userData'), 'ludr-error.log');
+    let st;
+    try { st = fs.statSync(logPath); } catch (_) { st = null; }
+    if (st && st.size > ERROR_LOG_MAX_BYTES) {
+      try { fs.renameSync(logPath, logPath + '.1'); } catch (_) {}
+    }
+    fs.appendFileSync(logPath, `${new Date().toISOString()} ${level} ${msg}\n`);
+  } catch (_) {}
+}
+
+function initErrorLogging() {
+  process.on('uncaughtException', (err) => writeErrorLog('uncaughtException', (err && err.stack) || String(err)));
+  process.on('unhandledRejection', (reason) => writeErrorLog('unhandledRejection', (reason && reason.stack) || String(reason)));
+  app.on('web-contents-created', (_e, contents) => {
+    contents.on('console-message', (event, levelOrDetails, message) => {
+      const level = typeof levelOrDetails === 'object' ? levelOrDetails.level : levelOrDetails;
+      const msg = typeof levelOrDetails === 'object' ? levelOrDetails.message : message;
+      if (level === 'error' || level === 'warning') writeErrorLog(`renderer:${level}`, msg);
+    });
+  });
+}
 
 // --- Single instance lock ---
 const gotTheLock = app.requestSingleInstanceLock();
@@ -67,7 +93,6 @@ const CHANNELS = {
 
   CHECK_FOR_UPDATES: 'check-for-updates',
   UPDATE_AVAILABLE: 'update-available',
-  DOWNLOAD_UPDATE: 'download-update',
 
   UPDATE_CHECK: 'update:check',
   UPDATE_DOWNLOAD: 'update:download',
@@ -113,7 +138,7 @@ async function registerUser() {
   try {
     const res = await fetch(`${SERVER_URL}/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}) },
       body: JSON.stringify({
         id: settings.deviceId,
         version: app.getVersion(),
@@ -467,6 +492,7 @@ async function runUpdateCheck(mainWindow) {
 }
 
 app.whenReady().then(() => {
+  initErrorLogging();
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === 'media'));
 
   // Force reload settings to ensure API keys from .env are loaded
@@ -707,7 +733,7 @@ app.whenReady().then(() => {
   ipcMain.handle('get-auto-start', async () => isAutoStartEnabled());
 
   ipcMain.handle('download-update', async (_e, { url }) => {
-    if (!url) throw new Error('No download URL');
+    if (!url || !url.startsWith(SERVER_URL)) throw new Error('Forbidden URL');
     const { spawn } = require('child_process');
     const tmpPath = path.join(app.getPath('temp'), 'luder-update.exe');
 
