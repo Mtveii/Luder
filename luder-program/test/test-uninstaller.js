@@ -32,8 +32,9 @@ function regQuery(subkey, value) {
   }
 }
 
-function assert(cond, msg) {
+function assert(cond, msg, detail) {
   if (!cond) {
+    if (detail != null) console.error(`  факт: ${JSON.stringify(detail)}`);
     console.error(`FAIL: ${msg}`);
     process.exit(1);
   }
@@ -55,10 +56,15 @@ try {
   const head = fs.readFileSync(uninstallerPath).subarray(0, 2);
   assert(head[0] === 0x4d && head[1] === 0x5a, 'Uninstall Luder.exe — валидный PE (MZ)');
 
-  assert(regQuery(REG_KEY, 'DisplayName') === 'Luder AI Assistant', 'реестр: DisplayName = Luder AI Assistant');
+  const dn = regQuery(REG_KEY, 'DisplayName');
+  assert(dn === 'Luder AI Assistant', 'реестр: DisplayName = Luder AI Assistant', dn);
   assert(regQuery(REG_KEY, 'DisplayVersion') != null, 'реестр: DisplayVersion есть');
   const uninstallString = regQuery(REG_KEY, 'UninstallString');
   assert(uninstallString != null, 'реестр: UninstallString есть');
+  try {
+    console.log('--- dump реестра при установке ---');
+    console.log(run('reg', ['query', REG_KEY]));
+  } catch (_) {}
 
   try {
     run('taskkill', ['/F', '/IM', 'Luder.exe']);
