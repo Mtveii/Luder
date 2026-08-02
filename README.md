@@ -161,20 +161,51 @@ npm run build                # rimraf dist → electron-builder --win --x64 → 
 - `GET /api/update/latest` — отдаёт манифест для запрошенной платформы/архитектуры
 - `GET /download/<file>` — отдаёт файлы билдов
 
+Производительность и безопасность (`server.js`):
+
+- gzip/brotli для JSON/HTML по `Accept-Encoding` (предсжато, кэшируется)
+- `ETag`/`If-None-Match` → 304 для лендинга, манифеста и скачиваний
+- Ограничение параллельных скачиваний (`MAX_DOWNLOADS`, очередь → 503 при переполнении)
+- SQLite: WAL + `synchronous=NORMAL`, `cache_size`, `busy_timeout`, `mmap_size`
+- Rate-limit на `/register` по IP; за прокси — по `X-Forwarded-For` (при `TRUST_PROXY=1`)
+- Ротация `server.log` по размеру (`LOG_MAX_BYTES`, хвост в `.1`)
+- Graceful shutdown по SIGTERM/SIGINT, защита от path-traversal, валидные парсеры без крахов на битом вводе
+
+Конфигурация — через `.env` рядом с `server.js` (пример: `luder-server/.env.example`), нулевые зависимости:
+
+```
+TRUST_PROXY=1          # за nginx/Caddy: rate-limit по X-Forwarded-For
+SSL_CERT=...           # прямой HTTPS без nginx
+SSL_KEY=...
+MAX_DOWNLOADS=5        # параллельных скачиваний
+MAX_DOWNLOAD_QUEUE=20
+REGISTER_LIMIT=5       # регистраций/мин с IP
+LOG_MAX_BYTES=5242880
+PORT=3000 HOST=127.0.0.1
+```
+
+### Прод-деплой (`luder-server/deploy/`)
+
+- `luder-server.service` — systemd-юнит: свой пользователь, `NoNewPrivileges`, `ProtectSystem`
+- `nginx-example.conf` — reverse proxy с TLS, сжатием и без буферизации на `/download`
+
+Порядок: nginx терминирует TLS → проксирует на `127.0.0.1:3000` → сервер видит реальный IP клиента через `X-Forwarded-For`. Прямой HTTPS (без nginx): задай `SSL_CERT`/`SSL_KEY`, сервер сам поднимет TLS.
+
 ---
 
 ## 9. Публикация релиза (шаги)
 
 1. Собрать установщик на Windows (раздел 4) или скачать из CI (раздел 5)
 2. Прогнать тесты: `npm test` в `luder-program` и `luder-server`
-3. Скормить установщик скрипту публикации:
+3. Скормить сборку скрипту публикации (платформа определяется по расширению файла, версия — из имени):
 
 ```bash
 cd luder-server
-./scripts/publish-release.sh ../luder-program/dist/Luder-Setup-<version>-x64.exe <version>
+./scripts/publish-release.sh ../luder-program/dist/Luder-Setup-<version>-x64.exe   # win32-x64
+./scripts/publish-release.sh ../luder-program/dist/Luder-<version>.AppImage        # linux-x64
 ```
 
-Скрипт делает 4 шага: (1) копирует `.exe` в `dist/`, (2) бэкапит `release.json`, (3) обновляет манифест с новым sha256, (4) гоняет `verify-release.js` — при провале откатывает манифест и удаляет файл.
+Скрипт делает 4 шага: (1) копирует файл в `dist/`, (2) бэкапит `release.json`, (3) обновляет манифест с новым sha256, (4) гоняет `verify-release.js` — при провале откатывает манифест и удаляет файл.
 
 4. Закоммитить манифест/файлы, поставить git-тег `v<version>`
 5. (Опционально) продублировать установщик в `release/` репозитория
@@ -203,6 +234,18 @@ LUDR_SERVER_URL=https://...
 - Ключи читаются в `config.js`/провайдерах через `process.env`
 - `.env` **исключён из сборки**: `build.files: ["**/*", "!build/**", "!.env", "!.env.example"]` — иначе ключ попадёт в `app.asar` и в установщик
 - Правило: скомпрометированный ключ (попавший в публичный билд) немедленно ротируется
+
+### Подпись кода (Windows, для широкой публикации)
+
+Без подписи SmartScreen пугает пользователей при запуске. electron-builder подписывает автоматически при наличии env-переменных (сертификат `.pfx/.p12`):
+
+```bash
+export WIN_CSC_LINK=/path/to/cert.pfx
+export WIN_CSC_KEY_PASSWORD=password
+npm run build
+```
+
+Подпись активируется только когда переменные заданы — обычная сборка её не трогает. После подписи пересобрать и переопубликовать через `publish-release.sh` (sha256 в манифесте пересчитается автоматически).
 
 ---
 

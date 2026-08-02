@@ -214,9 +214,17 @@ async function createOverlayWindows(promptPreset = '') {
       x: b.x, y: b.y, width: b.width, height: b.height,
       transparent: true, frame: false, alwaysOnTop: true,
       skipTaskbar: true, resizable: false, movable: false,
+      fullscreenable: false,
       icon: path.join(__dirname, 'assets/icon.png'),
       webPreferences: windowDefaults(),
     });
+
+    // Highest possible z-order: above normal always-on-top windows, dialogs,
+    // fullscreen apps and error windows. 'screen-saver' is the top level.
+    win.setAlwaysOnTop(true, 'screen-saver');
+    if (process.platform === 'darwin') {
+      win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    }
 
     win.loadFile(path.join(__dirname, 'src/overlay/overlay.html'));
 
