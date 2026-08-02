@@ -128,10 +128,6 @@ let selection = { dragging: false, start: { x: 0, y: 0 }, current: { x: 0, y: 0 
 
 const dynamicQuickHotkeys = [];
 
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
-let lastSessionThreadId = null;
-let lastSessionCloseTime = 0;
-
 // --- User registration on server ---
 async function registerUser() {
   const settings = storage.readSettings();
@@ -163,10 +159,7 @@ function registerMainHotkey(combo) {
   if (!combo || combo.trim() === '') return true;
   try {
     const success = globalShortcut.register(combo, () => {
-      if (overlayWindows.size === 0) {
-        if (tryResumeChat()) return;
-        createOverlayWindows();
-      }
+      if (overlayWindows.size === 0) createOverlayWindows();
     });
     if (success) {
       currentMainHotkey = combo;
@@ -277,24 +270,6 @@ async function createOverlayWindows(promptPreset = '') {
   }
 }
 
-function tryResumeChat() {
-  if (chatWindow && !chatWindow.isDestroyed()) {
-    chatWindow.show();
-    chatWindow.restore();
-    chatWindow.focus();
-    return true;
-  }
-  if (!lastSessionThreadId) return false;
-  if (Date.now() - lastSessionCloseTime > SESSION_TIMEOUT_MS) {
-    lastSessionThreadId = null;
-    return false;
-  }
-  const thread = storage.getThread(lastSessionThreadId);
-  if (!thread) { lastSessionThreadId = null; return false; }
-  createChatWindow({ thread });
-  return true;
-}
-
 function createChatWindow({ imageBase64 = null, prompt = null, threadId = null, thread = null } = {}) {
   // Close existing chat window first
   if (chatWindow && !chatWindow.isDestroyed()) {
@@ -316,10 +291,6 @@ function createChatWindow({ imageBase64 = null, prompt = null, threadId = null, 
   const win = chatWindow;
   win.on('closed', () => {
     if (chatWindow === win) chatWindow = null;
-    if (threadId) {
-      lastSessionThreadId = threadId;
-      lastSessionCloseTime = Date.now();
-    }
   });
 }
 
