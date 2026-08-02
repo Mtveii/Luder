@@ -1,6 +1,6 @@
 {
   "name": "luder",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "Экранный AI-ассистент: хоткей → выделение области → ответ AI",
   "main": "main.js",
   "author": "Luder",
@@ -30,12 +30,13 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Luder",
       "uninstallDisplayName": "Luder AI Assistant",
+      "include": "build/installer.nsh",
       "deleteAppDataOnUninstall": true,
       "runAfterFinish": true,
       "installerLanguages": ["ru_RU", "en_US"],
       "artifactName": "${productName}-Setup-${version}-${arch}.exe"
     },
-    "files": ["**/*", "!build${/*}"]
+    "files": ["**/*", "!build${/*}", "!.env", "!.env.example"]
   },
   "devDependencies": {
     "electron": "^31.0.0",

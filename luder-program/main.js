@@ -780,7 +780,9 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform !== 'darwin') {
+    // stay in tray for background work (update checks); user quits via tray menu
+  }
 });
 app.on('will-quit', () => {
   storage.flushPendingWrites();
