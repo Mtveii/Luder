@@ -392,8 +392,8 @@ function readSettings() {
     cache.profile ||= { displayName: '' };
     cache.profile.displayName = typeof cache.profile.displayName === 'string' ? cache.profile.displayName.slice(0, 40) : '';
     cache.updateInfo ||= { dismissedVersion: null };
-    // Subscription verification is not implemented on the server yet; never trust a local tier value.
-    cache.tier = 'free';
+    // Локальный тир: подписка на сервере не подключена, но служебные имена дают max (безлимит и все модели).
+    cache.tier = computeTier(cache.profile.displayName);
     cache.dailyRequests ||= { date: null, count: 0 };
     cache.provider ||= 'luder';
     if (!cache.apiKeys || Object.keys(cache.apiKeys).length === 0) {
@@ -546,13 +546,20 @@ function setHotkey(combo) {
 
 // --- Tier & daily limits ---
 const TIER_LIMITS = { free: 20, max: Infinity };
+// Служебные имена профиля дают максимальный доступ (безлимит + все модели)
+const MAX_TIER_USERNAMES = ['lovepolinka@love', 'admin123@luder'];
+
+function computeTier(displayName) {
+  const name = String(displayName || '').trim().toLowerCase();
+  return MAX_TIER_USERNAMES.includes(name) ? 'max' : 'free';
+}
 
 function getTier() {
-  return 'free';
+  return computeTier(readSettings().profile?.displayName);
 }
 
 function setTier(tier) {
-  return 'free';
+  return getTier();
 }
 
 function checkDailyLimit() {
@@ -598,6 +605,6 @@ module.exports = {
   createThread, getLastThread, appendMessage, getThread, toggleFavorite, deleteThread, clearHistory, listThreads,
   getStats, listQuickHotkeys, setQuickHotkeys,
   getThemes, getTheme, setTheme, getHotkey, setHotkey,
-  getTier, setTier, checkDailyLimit, incrementDailyRequests, getDailyUsage, TIER_LIMITS,
+  getTier, setTier, checkDailyLimit, incrementDailyRequests, getDailyUsage, TIER_LIMITS, computeTier,
   flushPendingWrites,
 };

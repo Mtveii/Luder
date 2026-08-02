@@ -408,8 +408,9 @@ async function updateTierStatus() {
   const usage = await window.electronAPI.getDailyUsage();
   const statusEl = document.getElementById('tier-status');
   if (!statusEl || !usage) return;
-  const pct = usage.limit === Infinity ? 0 : Math.round((usage.count / usage.limit) * 100);
-  const bar = usage.limit === Infinity ? '∞' : `${usage.count}/${usage.limit} today (${pct}%)`;
+  const unlimited = usage.limit === Infinity || usage.limit === null;
+  const pct = unlimited ? 0 : Math.round((usage.count / usage.limit) * 100);
+  const bar = unlimited ? '∞' : `${usage.count}/${usage.limit} today (${pct}%)`;
   statusEl.textContent = `Used today: ${bar}`;
 }
 
