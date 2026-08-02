@@ -208,8 +208,13 @@ select { cursor: pointer; appearance: none; background-image: url("data:image/sv
 .hk-row:hover { padding-left: 4px; }
 .hk-row button { background: none; border: none; color: var(--gray, #666); cursor: pointer; padding: 4px 8px; }
 .hk-row button:hover { color: var(--accent, #8fd400); }
-.hotkey-form { display: flex; gap: 6px; margin-top: 12px; }
+.hotkey-form { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
 .hotkey-form input { flex: 1; }
+.hk-record-row { display: flex; gap: 6px; flex: 1 1 100%; }
+.hk-record-row input { flex: 1; }
+.btn-ghost { background: transparent; border: 1px solid var(--border, rgba(255,255,255,0.2)); color: var(--text, #eee); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s ease; }
+.btn-ghost:hover { border-color: var(--primary, #8fd400); color: var(--primary, #8fd400); }
+#hk-combo.recording { border-color: var(--primary, #8fd400); box-shadow: 0 0 0 2px rgba(143, 212, 0, 0.15); }
 #hk-hint { color: var(--gray, #777); font-size: 12px; margin-top: 8px; }
 
 /* --- ИСТОРИЯ --- */

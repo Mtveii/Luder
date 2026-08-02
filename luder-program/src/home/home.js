@@ -249,6 +249,51 @@ document.getElementById('apply-theme').addEventListener('click', async () => {
 });
 
 // --- QUICK HOTKEYS ---
+const HP = window.HotkeyParser;
+const hkComboEl = document.getElementById('hk-combo');
+let recordingQuick = false;
+let stopQuickRecord = null;
+
+function stopRecordingQuick() {
+  if (stopQuickRecord) { stopQuickRecord(); stopQuickRecord = null; }
+  recordingQuick = false;
+}
+
+function startQuickRecord() {
+  if (recordingQuick) { stopRecordingQuick(); return; }
+  recordingQuick = true;
+  hkComboEl.value = 'Нажимайте клавиши…';
+  hkComboEl.classList.add('recording');
+  const finish = (combo) => {
+    recordingQuick = false;
+    stopQuickRecord = null;
+    document.removeEventListener('keydown', onKey, true);
+    hkComboEl.classList.remove('recording');
+    if (combo) hkComboEl.value = combo;
+  };
+  const onKey = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.code === 'Escape' && !e.ctrlKey && !e.altKey) { finish(''); return; }
+    const combo = HP.eventToAccelerator(e);
+    if (!combo) return;
+    if (HP.isModifierRequired(combo)) {
+      hkComboEl.value = combo + ' — нужен модификатор (Ctrl/Alt/Shift/Win)';
+      return;
+    }
+    finish(combo);
+  };
+  stopQuickRecord = () => {
+    document.removeEventListener('keydown', onKey, true);
+    hkComboEl.classList.remove('recording');
+    recordingQuick = false;
+    stopQuickRecord = null;
+  };
+  document.addEventListener('keydown', onKey, true);
+}
+
+document.getElementById('hk-record').addEventListener('click', startQuickRecord);
+
 async function saveQuickHotkeys(list) {
   const result = await window.electronAPI.setQuickHotkeys(list);
   const saved = result?.accepted || result || [];
@@ -370,15 +415,10 @@ async function updateTierStatus() {
 
 hotkeyEl.addEventListener('keydown', (e) => {
   e.preventDefault();
-  const keys = [];
-  if (e.ctrlKey) keys.push('Ctrl');
-  if (e.altKey) keys.push('Alt');
-  if (e.shiftKey) keys.push('Shift');
-  if (e.metaKey) keys.push('Super');
-  if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
-    keys.push(e.key === ' ' ? 'Space' : (e.key.length === 1 ? e.key.toUpperCase() : e.key));
-    hotkeyEl.value = keys.join('+');
-  }
+  const combo = HP.eventToAccelerator(e);
+  if (!combo) return;
+  if (HP.isModifierRequired(combo)) { hotkeyEl.value = 'Нужен модификатор (Ctrl/Alt/Shift/Win)'; return; }
+  hotkeyEl.value = combo;
 });
 
 document.getElementById('save').addEventListener('click', async () => {

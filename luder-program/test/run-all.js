@@ -9,6 +9,7 @@ const CLIENT_TESTS = [
   'luder-program/test/checksum.test.js',
   'luder-program/test/legacy-schema-fallback.test.js',
   'luder-program/test/detailed-updater.test.js',
+  'luder-program/test/hotkey-parser.test.js',
 ];
 const SERVER_TESTS = [
   'luder-server/test/server-integration.test.js',
