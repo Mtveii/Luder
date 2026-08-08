@@ -1,16 +1,16 @@
 {
-  "version": "0.17.3",
+  "version": "0.18.1",
   "minSupportedVersion": "0.10.0",
   "mandatory": false,
-  "releaseNotes": "Max-подписка для двух профилей, полная чистка при удалении, фикс лимита в UI",
+  "releaseNotes": "Продакшен-релиз 0.18.1: чистое удаление, серверная настройка",
   "builds": {
     "linux-x64": {
-      "url": "/download/Luder-0.17.3.AppImage",
-      "sha256": "1a73d7a6021576d127e96680b04a0daf102a9806cbf69975b07f0d42dbfda182"
+      "url": "/download/Luder-0.18.1.AppImage",
+      "sha256": "158d4d8e6ec074653eba0aa721164f374758740095939e573cb447af5e9482a4"
     },
     "win32-x64": {
-      "url": "/download/Luder-Setup-0.17.3-x64.exe",
-      "sha256": "9c8473039a7a7db85cb52ae3237100b3d64e035ff84a99f3b311e2866c6a33c9"
+      "url": "/download/Luder-Setup-0.18.1-x64.exe",
+      "sha256": "70d163beaa01a14fd23709a23166ce187afc6671fe1fee0ee5f01dcb319334cd"
     }
   }
 }

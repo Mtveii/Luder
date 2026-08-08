@@ -1,6 +1,6 @@
 {
   "name": "luder",
-  "version": "0.17.3",
+  "version": "0.18.1",
   "description": "Экранный AI-ассистент: хоткей → выделение области → ответ AI",
   "main": "main.js",
   "author": "Luder",
