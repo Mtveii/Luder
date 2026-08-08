@@ -13,7 +13,33 @@ const memoryManager = require('./src/shared/memory_manager');
 const chatManager = require('./src/shared/chat_manager');
 const storage = require('./src/shared/storage');
 const updater = require('./src/shared/updater');
-const { SERVER_URL } = require('./config');
+const { SERVER_URL, API_TOKEN } = require('./config');
+
+// --- Лог ошибок клиента (userData/ludr-error.log, ротация 1 МБ) ---
+const ERROR_LOG_MAX_BYTES = 1024 * 1024;
+function writeErrorLog(level, msg) {
+  try {
+    const logPath = path.join(app.getPath('userData'), 'ludr-error.log');
+    let st;
+    try { st = fs.statSync(logPath); } catch (_) { st = null; }
+    if (st && st.size > ERROR_LOG_MAX_BYTES) {
+      try { fs.renameSync(logPath, logPath + '.1'); } catch (_) {}
+    }
+    fs.appendFileSync(logPath, `${new Date().toISOString()} ${level} ${msg}\n`);
+  } catch (_) {}
+}
+
+function initErrorLogging() {
+  process.on('uncaughtException', (err) => writeErrorLog('uncaughtException', (err && err.stack) || String(err)));
+  process.on('unhandledRejection', (reason) => writeErrorLog('unhandledRejection', (reason && reason.stack) || String(reason)));
+  app.on('web-contents-created', (_e, contents) => {
+    contents.on('console-message', (event, levelOrDetails, message) => {
+      const level = typeof levelOrDetails === 'object' ? levelOrDetails.level : levelOrDetails;
+      const msg = typeof levelOrDetails === 'object' ? levelOrDetails.message : message;
+      if (level === 'error' || level === 'warning') writeErrorLog(`renderer:${level}`, msg);
+    });
+  });
+}
 
 // --- Single instance lock ---
 const gotTheLock = app.requestSingleInstanceLock();
@@ -67,7 +93,6 @@ const CHANNELS = {
 
   CHECK_FOR_UPDATES: 'check-for-updates',
   UPDATE_AVAILABLE: 'update-available',
-  DOWNLOAD_UPDATE: 'download-update',
 
   UPDATE_CHECK: 'update:check',
   UPDATE_DOWNLOAD: 'update:download',
@@ -103,17 +128,13 @@ let selection = { dragging: false, start: { x: 0, y: 0 }, current: { x: 0, y: 0 
 
 const dynamicQuickHotkeys = [];
 
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
-let lastSessionThreadId = null;
-let lastSessionCloseTime = 0;
-
 // --- User registration on server ---
 async function registerUser() {
   const settings = storage.readSettings();
   try {
     const res = await fetch(`${SERVER_URL}/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}) },
       body: JSON.stringify({
         id: settings.deviceId,
         version: app.getVersion(),
@@ -138,10 +159,7 @@ function registerMainHotkey(combo) {
   if (!combo || combo.trim() === '') return true;
   try {
     const success = globalShortcut.register(combo, () => {
-      if (overlayWindows.size === 0) {
-        if (tryResumeChat()) return;
-        createOverlayWindows();
-      }
+      if (overlayWindows.size === 0) createOverlayWindows();
     });
     if (success) {
       currentMainHotkey = combo;
@@ -214,9 +232,17 @@ async function createOverlayWindows(promptPreset = '') {
       x: b.x, y: b.y, width: b.width, height: b.height,
       transparent: true, frame: false, alwaysOnTop: true,
       skipTaskbar: true, resizable: false, movable: false,
+      fullscreenable: false,
       icon: path.join(__dirname, 'assets/icon.png'),
       webPreferences: windowDefaults(),
     });
+
+    // Highest possible z-order: above normal always-on-top windows, dialogs,
+    // fullscreen apps and error windows. 'screen-saver' is the top level.
+    win.setAlwaysOnTop(true, 'screen-saver');
+    if (process.platform === 'darwin') {
+      win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    }
 
     win.loadFile(path.join(__dirname, 'src/overlay/overlay.html'));
 
@@ -244,24 +270,6 @@ async function createOverlayWindows(promptPreset = '') {
   }
 }
 
-function tryResumeChat() {
-  if (chatWindow && !chatWindow.isDestroyed()) {
-    chatWindow.show();
-    chatWindow.restore();
-    chatWindow.focus();
-    return true;
-  }
-  if (!lastSessionThreadId) return false;
-  if (Date.now() - lastSessionCloseTime > SESSION_TIMEOUT_MS) {
-    lastSessionThreadId = null;
-    return false;
-  }
-  const thread = storage.getThread(lastSessionThreadId);
-  if (!thread) { lastSessionThreadId = null; return false; }
-  createChatWindow({ thread });
-  return true;
-}
-
 function createChatWindow({ imageBase64 = null, prompt = null, threadId = null, thread = null } = {}) {
   // Close existing chat window first
   if (chatWindow && !chatWindow.isDestroyed()) {
@@ -283,10 +291,6 @@ function createChatWindow({ imageBase64 = null, prompt = null, threadId = null, 
   const win = chatWindow;
   win.on('closed', () => {
     if (chatWindow === win) chatWindow = null;
-    if (threadId) {
-      lastSessionThreadId = threadId;
-      lastSessionCloseTime = Date.now();
-    }
   });
 }
 
@@ -459,6 +463,7 @@ async function runUpdateCheck(mainWindow) {
 }
 
 app.whenReady().then(() => {
+  initErrorLogging();
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(permission === 'media'));
 
   // Force reload settings to ensure API keys from .env are loaded
@@ -699,7 +704,7 @@ app.whenReady().then(() => {
   ipcMain.handle('get-auto-start', async () => isAutoStartEnabled());
 
   ipcMain.handle('download-update', async (_e, { url }) => {
-    if (!url) throw new Error('No download URL');
+    if (!url || !url.startsWith(SERVER_URL)) throw new Error('Forbidden URL');
     const { spawn } = require('child_process');
     const tmpPath = path.join(app.getPath('temp'), 'luder-update.exe');
 

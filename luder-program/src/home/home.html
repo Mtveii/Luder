@@ -81,11 +81,14 @@
       <h2>Quick Hotkeys</h2>
       <div id="hotkeys-list"></div>
       <div class="hotkey-form">
-        <input id="hk-combo" placeholder="Комбинация, напр. Alt+1" />
+        <div class="hk-record-row">
+          <input id="hk-combo" placeholder="Нажмите «Записать», затем клавиши" />
+          <button id="hk-record" class="btn-ghost">Записать</button>
+        </div>
         <input id="hk-prompt" placeholder="Фиксированный промпт" />
         <button id="hk-add" class="btn-primary">Добавить</button>
       </div>
-      <div id="hk-hint">До 10 привязок</div>
+      <div id="hk-hint">До 10 привязок. Любые клавиши: буквы, цифры, F1–F24, стрелки, Space, Tab, Enter и др. + Ctrl/Alt/Shift/Win. Для букв и цифр обязателен модификатор. Esc — отмена записи, Enter — подтвердить.</div>
     </section>
 
     <!-- НАСТРОЙКИ -->
@@ -203,6 +206,7 @@
   </main>
 
   <script src="../shared/theme.js"></script>
+  <script src="../shared/hotkeyParser.js"></script>
   <script src="home.js"></script>
 </body>
 </html>

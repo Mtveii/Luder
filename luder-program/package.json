@@ -1,6 +1,6 @@
 {
   "name": "luder",
-  "version": "0.17.1",
+  "version": "0.18.2",
   "description": "Экранный AI-ассистент: хоткей → выделение области → ответ AI",
   "main": "main.js",
   "author": "Luder",
@@ -18,7 +18,12 @@
     "productName": "Luder",
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "assets/icon.png"
     },
@@ -33,14 +38,29 @@
       "include": "build/installer.nsh",
       "deleteAppDataOnUninstall": true,
       "runAfterFinish": true,
-      "installerLanguages": ["ru_RU", "en_US"],
+      "installerLanguages": [
+        "ru_RU",
+        "en_US"
+      ],
       "artifactName": "${productName}-Setup-${version}-${arch}.exe"
     },
-    "files": ["**/*", "!build${/*}", "!.env", "!.env.example"]
+    "files": [
+      "**/*",
+      "!build${/*}",
+      "!.env",
+      "!.env.example",
+      "!dist${/*}"
+    ],
+    "extraResources": [
+      {
+        "from": ".env",
+        "to": ".env"
+      }
+    ]
   },
   "devDependencies": {
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "rimraf": "^5.0.0"
   },
   "dependencies": {}

@@ -1,16 +1,16 @@
 {
-  "version": "0.17.0",
+  "version": "0.18.2",
   "minSupportedVersion": "0.10.0",
   "mandatory": false,
-  "releaseNotes": "Auto-update system implemented",
+  "releaseNotes": "Исправлено сохранение ключей API (safeStorage-фолбэк), фолбэк провайдеров, .env в сборке",
   "builds": {
     "linux-x64": {
-      "url": "/download/Luder-0.17.0.AppImage",
-      "sha256": "e1461e6bff007d8b9d1c7950c07c762f70b1dab3a0a558a0b0cf0bfff869d8ae"
+      "url": "/download/Luder-0.18.2.AppImage",
+      "sha256": "cdc956efd64e143deb72900de9a8565843e748476a547fcd3ce146317c82834b"
     },
     "win32-x64": {
-      "url": "/download/Luder-Setup-0.17.0-x64.exe",
-      "sha256": "775872c9c09e592da329e7e7369b70c889e414e6cba00c9b59d0ea7aca1efe8b"
+      "url": "/download/Luder-Setup-0.18.2-x64.exe",
+      "sha256": "64dbea12dd9a7dbc1ee83f46a0f3554b78fdd4f9137986fa28c2468410d1e6c6"
     }
   }
 }

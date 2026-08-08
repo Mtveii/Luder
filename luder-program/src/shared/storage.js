@@ -11,6 +11,8 @@ function loadEnvFile() {
       path.join(process.cwd(), '.env'),
       path.join(app.getAppPath(), '.env'),
       path.join(path.dirname(process.execPath), '.env'),
+      path.join(path.dirname(process.execPath), 'resources', '.env'),
+      path.join(path.dirname(app.getPath('exe')), 'resources', '.env'),
     ];
     
     for (const envPath of possiblePaths) {
@@ -381,8 +383,12 @@ function readSettings() {
   try {
     cache = JSON.parse(fs.readFileSync(getStoragePath(), 'utf-8'));
     if (cache.encryptedApiKeys) {
-      if (!safeStorage.isEncryptionAvailable()) throw new Error('OS credential encryption is unavailable');
-      cache.apiKeys = JSON.parse(safeStorage.decryptString(Buffer.from(cache.encryptedApiKeys, 'base64')));
+      if (!safeStorage.isEncryptionAvailable()) {
+        console.warn('[STORAGE] safeStorage недоступен, но найдены зашифрованные ключи — читаем фолбэк-поле');
+        cache.apiKeys = cache.apiKeys || {};
+      } else {
+        cache.apiKeys = JSON.parse(safeStorage.decryptString(Buffer.from(cache.encryptedApiKeys, 'base64')));
+      }
       delete cache.encryptedApiKeys;
     }
     cache.quickHotkeys ||= [];
@@ -392,8 +398,8 @@ function readSettings() {
     cache.profile ||= { displayName: '' };
     cache.profile.displayName = typeof cache.profile.displayName === 'string' ? cache.profile.displayName.slice(0, 40) : '';
     cache.updateInfo ||= { dismissedVersion: null };
-    // Subscription verification is not implemented on the server yet; never trust a local tier value.
-    cache.tier = 'free';
+    // Локальный тир: подписка на сервере не подключена, но служебные имена дают max (безлимит и все модели).
+    cache.tier = computeTier(cache.profile.displayName);
     cache.dailyRequests ||= { date: null, count: 0 };
     cache.provider ||= 'luder';
     if (!cache.apiKeys || Object.keys(cache.apiKeys).length === 0) {
@@ -416,8 +422,14 @@ function writeSettings(data) {
   const saved = { ...data };
   delete saved.apiKeys;
   if (data.apiKeys && Object.keys(data.apiKeys).length > 0) {
-    if (!safeStorage.isEncryptionAvailable()) throw new Error('OS credential encryption is unavailable');
-    saved.encryptedApiKeys = safeStorage.encryptString(JSON.stringify(data.apiKeys)).toString('base64');
+    if (safeStorage.isEncryptionAvailable()) {
+      saved.encryptedApiKeys = safeStorage.encryptString(JSON.stringify(data.apiKeys)).toString('base64');
+    } else {
+      // Фолбэк: шифрование ОС недоступно (Linux без keyring) — храним открыто,
+      // иначе ключи вообще не сохранятся и ни один провайдер не заработает.
+      console.warn('[STORAGE] safeStorage недоступен, ключи сохраняются открытым текстом');
+      saved.apiKeys = data.apiKeys;
+    }
   }
   fs.writeFileSync(getStoragePath(), JSON.stringify(saved, null, 2), 'utf-8');
   return data;
@@ -546,13 +558,20 @@ function setHotkey(combo) {
 
 // --- Tier & daily limits ---
 const TIER_LIMITS = { free: 20, max: Infinity };
+// Служебные имена профиля дают максимальный доступ (безлимит + все модели)
+const MAX_TIER_USERNAMES = ['lovepolinka@love', 'admin123@luder'];
+
+function computeTier(displayName) {
+  const name = String(displayName || '').trim().toLowerCase();
+  return MAX_TIER_USERNAMES.includes(name) ? 'max' : 'free';
+}
 
 function getTier() {
-  return 'free';
+  return computeTier(readSettings().profile?.displayName);
 }
 
 function setTier(tier) {
-  return 'free';
+  return getTier();
 }
 
 function checkDailyLimit() {
@@ -598,6 +617,6 @@ module.exports = {
   createThread, getLastThread, appendMessage, getThread, toggleFavorite, deleteThread, clearHistory, listThreads,
   getStats, listQuickHotkeys, setQuickHotkeys,
   getThemes, getTheme, setTheme, getHotkey, setHotkey,
-  getTier, setTier, checkDailyLimit, incrementDailyRequests, getDailyUsage, TIER_LIMITS,
+  getTier, setTier, checkDailyLimit, incrementDailyRequests, getDailyUsage, TIER_LIMITS, computeTier,
   flushPendingWrites,
 };

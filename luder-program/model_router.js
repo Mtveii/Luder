@@ -32,15 +32,17 @@ async function firstChunkWinner(gens, models) {
   );
 
   const remaining = new Map(attempts.map((p, i) => [i, p]));
+  const errors = [];
   while (remaining.size) {
     const result = await Promise.race(remaining.values());
     remaining.delete(result.idx);
     if (result.ok) {
       const losers = gens.filter((_, i) => i !== result.idx);
-      return { winnerIdx: result.idx, winnerGen: result.gen, firstResult: result.res, losers };
+      return { winnerIdx: result.idx, winnerGen: result.gen, firstResult: result.res, losers, errors };
     }
+    errors.push({ model: models[result.idx]?.id, err: result.err });
   }
-  return null;
+  return { winnerIdx: null, errors };
 }
 
 function cleanupLosers(losers) {
@@ -102,7 +104,7 @@ async function* modelRouterAsk(imageBase64, promptText, config, onStat = () => {
 
   const result = await firstChunkWinner(gens, top3);
 
-  if (result) {
+  if (result.winnerIdx !== null) {
     for (const [i, gen] of gens.entries()) {
       if (i !== result.winnerIdx) controllers[i].abort();
     }
@@ -116,9 +118,25 @@ async function* modelRouterAsk(imageBase64, promptText, config, onStat = () => {
   controllers.forEach(c => c.abort());
   onStat(null, 'race_all_failed');
 
+  const details = result.errors
+    .map(e => `${e.model}: ${(e.err && e.err.message) || e.err}`)
+    .join(' | ');
+  console.error('[ROUTER] Race all failed —', details);
+
   const fallback = getFallbackChain(raceConfig);
   if (fallback.length === 0) {
-    throw new RouterError('ALL_MODELS_FAILED', new AppError('Race all failed and no fallback models with keys configured', { code: 'NO_FALLBACK' }));
+    // Даже без запасного пула пробуем повторить с Luder-роутером:
+    // он сам переберёт всех провайдеров, у которых есть ключи.
+    const anyKeys = modelsWithKeys(raceConfig);
+    if (anyKeys.length === 0) {
+      throw new RouterError('ALL_MODELS_FAILED', new AppError(
+        'Не удалось получить ответ ни от одного провайдера. Проверьте интернет и ключи API в настройках, затем попробуйте ещё раз.',
+        { code: 'NO_FALLBACK', details }
+      ));
+    }
+    console.warn('[ROUTER] No fallback models with keys, retrying via luder-auto router');
+    yield* runSequentialFallback(anyKeys.map(m => ({ ...m, timeoutMs: m.timeoutMs })), imageBase64, promptText, raceConfig, onStat, raceConfig.signal);
+    return;
   }
 
   yield* runSequentialFallback(fallback, imageBase64, promptText, raceConfig, onStat, raceConfig.signal);

@@ -5,4 +5,7 @@ dist/
 .env.local
 luder-server/data.db*
 luder-server/config/release.json.bak
+# Релизные бинарники хранятся на сервере (luder-server/dist) и локально,
+# в git не коммитятся — GitHub отклоняет файлы >100 МБ
+release/
 AGENTS.md
