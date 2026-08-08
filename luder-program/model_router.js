@@ -125,10 +125,18 @@ async function* modelRouterAsk(imageBase64, promptText, config, onStat = () => {
 
   const fallback = getFallbackChain(raceConfig);
   if (fallback.length === 0) {
-    throw new RouterError('ALL_MODELS_FAILED', new AppError(
-      'Не удалось получить ответ ни от одного провайдера. Проверьте интернет и ключи API в настройках, затем попробуйте ещё раз.',
-      { code: 'NO_FALLBACK', details }
-    ));
+    // Даже без запасного пула пробуем повторить с Luder-роутером:
+    // он сам переберёт всех провайдеров, у которых есть ключи.
+    const anyKeys = modelsWithKeys(raceConfig);
+    if (anyKeys.length === 0) {
+      throw new RouterError('ALL_MODELS_FAILED', new AppError(
+        'Не удалось получить ответ ни от одного провайдера. Проверьте интернет и ключи API в настройках, затем попробуйте ещё раз.',
+        { code: 'NO_FALLBACK', details }
+      ));
+    }
+    console.warn('[ROUTER] No fallback models with keys, retrying via luder-auto router');
+    yield* runSequentialFallback(anyKeys.map(m => ({ ...m, timeoutMs: m.timeoutMs })), imageBase64, promptText, raceConfig, onStat, raceConfig.signal);
+    return;
   }
 
   yield* runSequentialFallback(fallback, imageBase64, promptText, raceConfig, onStat, raceConfig.signal);

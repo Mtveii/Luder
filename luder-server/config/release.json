@@ -1,16 +1,16 @@
 {
-  "version": "0.18.1",
+  "version": "0.18.2",
   "minSupportedVersion": "0.10.0",
   "mandatory": false,
-  "releaseNotes": "Продакшен-релиз 0.18.1: чистое удаление, серверная настройка",
+  "releaseNotes": "Исправлено сохранение ключей API (safeStorage-фолбэк), фолбэк провайдеров, .env в сборке",
   "builds": {
     "linux-x64": {
-      "url": "/download/Luder-0.18.1.AppImage",
-      "sha256": "158d4d8e6ec074653eba0aa721164f374758740095939e573cb447af5e9482a4"
+      "url": "/download/Luder-0.18.2.AppImage",
+      "sha256": "cdc956efd64e143deb72900de9a8565843e748476a547fcd3ce146317c82834b"
     },
     "win32-x64": {
-      "url": "/download/Luder-Setup-0.18.1-x64.exe",
-      "sha256": "70d163beaa01a14fd23709a23166ce187afc6671fe1fee0ee5f01dcb319334cd"
+      "url": "/download/Luder-Setup-0.18.2-x64.exe",
+      "sha256": "64dbea12dd9a7dbc1ee83f46a0f3554b78fdd4f9137986fa28c2468410d1e6c6"
     }
   }
 }

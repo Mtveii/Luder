@@ -176,7 +176,7 @@ async function* readOpenAiDeltas(stream, providerName, signal) {
 async function* askOpenAICompatible(imageBase64, promptText, config, { baseUrl, providerName, providerKey }) {
   const key = config.apiKeys?.[providerKey];
   if (!key) throw new Error(`No ${providerName} API key. Add your key in settings.`);
-  const model = config.model || MODELS[providerKey]?.[0]?.id;
+  const model = config.model || (providerKey === 'openrouter' ? 'openai/gpt-4o-mini' : MODELS[providerKey]?.[0]?.id);
   validateModel(model, providerKey);
   const image = cleanImageBase64(imageBase64);
   const mimeType = imageMimeType(image);
@@ -321,46 +321,57 @@ async function* askLuder(imageBase64, promptText, config) {
 
   console.log('[LUDER] Provider: luder, Model:', model, 'Available keys:', Object.keys(keys));
 
-  const all = [
-    keys.gemini && { name: 'Gemini', gen: () => askGemini(imageBase64, promptText, cfg) },
-    keys.groq && { name: 'Groq', gen: () => askGroq(imageBase64, promptText, cfg) },
-    keys.deepseek && { name: 'DeepSeek', gen: () => askDeepSeek(imageBase64, promptText, cfg) },
-    keys.openai && { name: 'OpenAI', gen: () => askOpenAI(imageBase64, promptText, cfg) },
-    keys.anthropic && { name: 'Anthropic', gen: () => askAnthropic(imageBase64, promptText, cfg) },
-    keys.mistral && { name: 'Mistral', gen: () => askMistral(imageBase64, promptText, cfg) },
-    keys.openrouter && { name: 'OpenRouter', gen: () => askOpenRouter(imageBase64, promptText, cfg) },
-    keys.together && { name: 'Together', gen: () => askTogether(imageBase64, promptText, cfg) },
-    keys.fireworks && { name: 'Fireworks', gen: () => askFireworks(imageBase64, promptText, cfg) },
-    keys.cerebras && { name: 'Cerebras', gen: () => askCerebras(imageBase64, promptText, cfg) },
-    keys.sambanova && { name: 'Sambanova', gen: () => askSambanova(imageBase64, promptText, cfg) },
-  ].filter(Boolean);
+  const appBuiltins = [
+    { name: 'Gemini', inited: !!keys.gemini, gen: () => askGemini(imageBase64, promptText, cfg) },
+    { name: 'Groq', inited: !!keys.groq, gen: () => askGroq(imageBase64, promptText, cfg) },
+    { name: 'DeepSeek', inited: !!keys.deepseek, gen: () => askDeepSeek(imageBase64, promptText, cfg) },
+    { name: 'OpenAI', inited: !!keys.openai, gen: () => askOpenAI(imageBase64, promptText, cfg) },
+    { name: 'Anthropic', inited: !!keys.anthropic, gen: () => askAnthropic(imageBase64, promptText, cfg) },
+    { name: 'Mistral', inited: !!keys.mistral, gen: () => askMistral(imageBase64, promptText, cfg) },
+    { name: 'OpenRouter', inited: !!keys.openrouter, gen: () => askOpenRouter(imageBase64, promptText, cfg) },
+    { name: 'Together', inited: !!keys.together, gen: () => askTogether(imageBase64, promptText, cfg) },
+    { name: 'Fireworks', inited: !!keys.fireworks, gen: () => askFireworks(imageBase64, promptText, cfg) },
+    { name: 'Cerebras', inited: !!keys.cerebras, gen: () => askCerebras(imageBase64, promptText, cfg) },
+    { name: 'Sambanova', inited: !!keys.sambanova, gen: () => askSambanova(imageBase64, promptText, cfg) },
+  ].filter((p) => p.inited);
 
-  console.log('[LUDER] Active providers:', all.map((p) => p.name));
+  console.log('[LUDER] Active providers:', appBuiltins.map((p) => p.name));
 
-  if (all.length === 0) throw new Error('No API key configured. Add at least one key in Settings.');
+  if (appBuiltins.length === 0) throw new Error('No API key configured. Add at least one key in Settings.');
 
+  // Приоритетный провайдер по выбранной модели, остальные — фолбэк по очереди.
   if (model !== 'luder-auto') {
-    // If model has provider prefix (e.g., "openai/gpt-4o"), use OpenRouter
+    let order = appBuiltins;
     if (model.includes('/')) {
-      const orIdx = all.findIndex((p) => p.name === 'OpenRouter');
-      if (orIdx >= 0) return yield* all[orIdx].gen();
+      const orIdx = appBuiltins.findIndex((p) => p.name === 'OpenRouter');
+      if (orIdx >= 0) order = [appBuiltins[orIdx], ...appBuiltins.slice(0, orIdx), ...appBuiltins.slice(orIdx + 1)];
+    } else {
+      const idx = appBuiltins.findIndex((p) =>
+        (model.startsWith('gpt') && p.name === 'OpenAI') ||
+        (model.startsWith('claude') && p.name === 'Anthropic') ||
+        (model.startsWith('gemini') && p.name === 'Gemini') ||
+        (model.includes('llama') && (p.name === 'Groq' || p.name === 'Together')) ||
+        (model.startsWith('mistral') && p.name === 'Mistral') ||
+        (model.startsWith('deepseek') && p.name === 'DeepSeek') ||
+        (model.includes('free') && p.name === 'OpenRouter')
+      );
+      if (idx >= 0) order = [appBuiltins[idx], ...appBuiltins.slice(0, idx), ...appBuiltins.slice(idx + 1)];
     }
-    const idx = all.findIndex((p) =>
-      (model.startsWith('gpt') && p.name === 'OpenAI') ||
-      (model.startsWith('claude') && p.name === 'Anthropic') ||
-      (model.startsWith('gemini') && p.name === 'Gemini') ||
-      (model.includes('groq') && p.name === 'Groq') ||
-      (model.startsWith('mistral') && p.name === 'Mistral') ||
-      (model.startsWith('deepseek') && p.name === 'DeepSeek') ||
-      (model.includes('free') && p.name === 'OpenRouter')
-    );
-    if (idx >= 0) return yield* all[idx].gen();
-    return yield* all[0].gen();
+    const errors = [];
+    for (const candidate of order) {
+      try {
+        yield* candidate.gen();
+        return;
+      } catch (err) {
+        errors.push(`${candidate.name}: ${err.message}`);
+      }
+    }
+    throw new Error(`All providers failed. ${errors.join(' | ')}`);
   }
 
   // Auto: гонка 3 быстрых с заменой из оставшихся 7
   const errors = [];
-  for (const candidate of all) {
+  for (const candidate of appBuiltins) {
     try {
       yield* candidate.gen();
       return;

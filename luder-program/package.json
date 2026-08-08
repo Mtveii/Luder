@@ -1,6 +1,6 @@
 {
   "name": "luder",
-  "version": "0.18.1",
+  "version": "0.18.2",
   "description": "Экранный AI-ассистент: хоткей → выделение области → ответ AI",
   "main": "main.js",
   "author": "Luder",
@@ -48,7 +48,14 @@
       "**/*",
       "!build${/*}",
       "!.env",
-      "!.env.example"
+      "!.env.example",
+      "!dist${/*}"
+    ],
+    "extraResources": [
+      {
+        "from": ".env",
+        "to": ".env"
+      }
     ]
   },
   "devDependencies": {

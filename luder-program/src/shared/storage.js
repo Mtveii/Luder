@@ -11,6 +11,8 @@ function loadEnvFile() {
       path.join(process.cwd(), '.env'),
       path.join(app.getAppPath(), '.env'),
       path.join(path.dirname(process.execPath), '.env'),
+      path.join(path.dirname(process.execPath), 'resources', '.env'),
+      path.join(path.dirname(app.getPath('exe')), 'resources', '.env'),
     ];
     
     for (const envPath of possiblePaths) {
@@ -381,8 +383,12 @@ function readSettings() {
   try {
     cache = JSON.parse(fs.readFileSync(getStoragePath(), 'utf-8'));
     if (cache.encryptedApiKeys) {
-      if (!safeStorage.isEncryptionAvailable()) throw new Error('OS credential encryption is unavailable');
-      cache.apiKeys = JSON.parse(safeStorage.decryptString(Buffer.from(cache.encryptedApiKeys, 'base64')));
+      if (!safeStorage.isEncryptionAvailable()) {
+        console.warn('[STORAGE] safeStorage недоступен, но найдены зашифрованные ключи — читаем фолбэк-поле');
+        cache.apiKeys = cache.apiKeys || {};
+      } else {
+        cache.apiKeys = JSON.parse(safeStorage.decryptString(Buffer.from(cache.encryptedApiKeys, 'base64')));
+      }
       delete cache.encryptedApiKeys;
     }
     cache.quickHotkeys ||= [];
@@ -416,8 +422,14 @@ function writeSettings(data) {
   const saved = { ...data };
   delete saved.apiKeys;
   if (data.apiKeys && Object.keys(data.apiKeys).length > 0) {
-    if (!safeStorage.isEncryptionAvailable()) throw new Error('OS credential encryption is unavailable');
-    saved.encryptedApiKeys = safeStorage.encryptString(JSON.stringify(data.apiKeys)).toString('base64');
+    if (safeStorage.isEncryptionAvailable()) {
+      saved.encryptedApiKeys = safeStorage.encryptString(JSON.stringify(data.apiKeys)).toString('base64');
+    } else {
+      // Фолбэк: шифрование ОС недоступно (Linux без keyring) — храним открыто,
+      // иначе ключи вообще не сохранятся и ни один провайдер не заработает.
+      console.warn('[STORAGE] safeStorage недоступен, ключи сохраняются открытым текстом');
+      saved.apiKeys = data.apiKeys;
+    }
   }
   fs.writeFileSync(getStoragePath(), JSON.stringify(saved, null, 2), 'utf-8');
   return data;
