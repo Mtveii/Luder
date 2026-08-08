@@ -1,16 +1,16 @@
 {
-  "version": "0.17.2",
+  "version": "0.17.3",
   "minSupportedVersion": "0.10.0",
   "mandatory": false,
-  "releaseNotes": "Auto-update system implemented",
+  "releaseNotes": "Max-подписка для двух профилей, полная чистка при удалении, фикс лимита в UI",
   "builds": {
     "linux-x64": {
-      "url": "/download/Luder-0.17.2.AppImage",
-      "sha256": "07749d45dc8580fd2a0a2c20b3b7aa392245a799a0657f9bc5b8caaf37f2e40a"
+      "url": "/download/Luder-0.17.3.AppImage",
+      "sha256": "1a73d7a6021576d127e96680b04a0daf102a9806cbf69975b07f0d42dbfda182"
     },
     "win32-x64": {
-      "url": "/download/Luder-Setup-0.17.2-x64.exe",
-      "sha256": "a9c8bff19ec27cabfcfaa67738cb6c39c401f82792a2a1501168765f445410a8"
+      "url": "/download/Luder-Setup-0.17.3-x64.exe",
+      "sha256": "9c8473039a7a7db85cb52ae3237100b3d64e035ff84a99f3b311e2866c6a33c9"
     }
   }
 }
